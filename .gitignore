@@ -21,10 +21,8 @@ lib/core/secrets.dart
 .env
 .packages
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# VS Code related
+.vscode/
 
 # Flutter/Dart/Pub related
 **/doc/api/
@@ -48,3 +46,44 @@ app.*.map.json
 /android/app/release
 android/local.properties
 ios/Flutter/Generated.xcconfig
+
+# Android-specific
+.gradle/
+android/app/google-services.json
+android/app/key.properties
+android/app/src/main/res/values/google-services.xml
+*.keystore
+*.jks
+
+# iOS-specific
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/app.flx
+ios/Flutter/app.zip
+ios/Flutter/flutter_assets
+ios/Flutter/flutter_export_environment.sh
+ios/ServiceDefinitions.json
+ios/Runner/GeneratedPluginRegistrant.h
+ios/Runner/GeneratedPluginRegistrant.m
+ios/Pods/
+ios/.symlinks/
+ios/Flash/
+
+# macOS-specific
+macos/Flutter/ephemeral/
+macos/Pods/
+
+# Linux-specific
+linux/flutter/ephemeral/
+
+# Windows-specific
+windows/flutter/ephemeral/
+
+# Web-specific
+.dart_tool/chrome-device/
+
+# Supabase / Env
+.env*
+!.env.example
