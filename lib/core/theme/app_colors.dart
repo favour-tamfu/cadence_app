@@ -11,6 +11,7 @@ class AppColors {
   static const Color cream      = Color(0xFFF7F2EA);
   static const Color muted      = Color(0xFF8A9BB0);
 
+
   // Semantic
   static const Color success = Color(0xFF1D9E75);
   static const Color error   = Color(0xFFE24B4A);

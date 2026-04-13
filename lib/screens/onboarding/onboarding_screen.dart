@@ -536,7 +536,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
   // ── PAGE 4 — AI Tutor ───────────────────────────────────────────────────────
   Widget _buildPage4() {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 32),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,

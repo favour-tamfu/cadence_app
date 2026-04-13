@@ -10,6 +10,7 @@
 .history
 .svn/
 .swiftpm/
+.metadata
 migrate_working_dir/
 lib/core/secrets.dart
 
@@ -28,6 +29,7 @@ lib/core/secrets.dart
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
@@ -49,6 +51,7 @@ ios/Flutter/Generated.xcconfig
 
 # Android-specific
 .gradle/
+android/.kotlin/
 android/app/google-services.json
 android/app/key.properties
 android/app/src/main/res/values/google-services.xml
