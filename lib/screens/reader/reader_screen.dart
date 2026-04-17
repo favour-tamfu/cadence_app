@@ -11,6 +11,7 @@ class ReaderScreen extends StatefulWidget {
   final String bookTitle;
   final String fileUrl;
   final String libraryEntryId;
+  final String bookId;
   final int initialPage;
   final int totalPages;
 
@@ -19,6 +20,7 @@ class ReaderScreen extends StatefulWidget {
     required this.bookTitle,
     required this.fileUrl,
     required this.libraryEntryId,
+    required this.bookId,
     required this.initialPage,
     required this.totalPages,
   });
@@ -29,9 +31,6 @@ class ReaderScreen extends StatefulWidget {
 
 class _ReaderScreenState extends State<ReaderScreen> {
   final _supabase = Supabase.instance.client;
-
-  // PDF controller
-  PDFViewController? _pdfController;
 
   // Tracking state
   int _currentPage = 0;
@@ -56,25 +55,47 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   // ── DOWNLOAD PDF TO LOCAL STORAGE ─────────────────────────────────────────
-  // PDFView needs a local file path — it can't stream from a URL directly
+  // PDFView needs a local file path — it can't stream from a URL directly.
+  //
+  // file_url can be either:
+  //   • A storage PATH  ("users/.../books/xxx.pdf") — new uploads
+  //   • A full HTTPS URL — any records saved before this fix
+  //
+  // Paths use the authenticated Supabase SDK (works on private buckets).
+  // Legacy URLs have the Supabase JWT injected as an Authorization header.
   Future<void> _downloadPdf() async {
     try {
       setState(() => _isDownloading = true);
 
-      final response = await http.get(Uri.parse(widget.fileUrl));
-
-      if (response.statusCode != 200) {
-        setState(() {
-          _errorMessage = 'Could not load the PDF. Please try again.';
-          _isDownloading = false;
-        });
-        return;
-      }
-
-      // Save to temp directory
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/${widget.libraryEntryId}.pdf');
-      await file.writeAsBytes(response.bodyBytes);
+
+      if (widget.fileUrl.startsWith('http')) {
+        // ── Legacy full URL: add auth header for private bucket access
+        final session = _supabase.auth.currentSession;
+        final response = await http.get(
+          Uri.parse(widget.fileUrl),
+          headers: session != null
+              ? {'Authorization': 'Bearer ${session.accessToken}'}
+              : {},
+        );
+        if (response.statusCode != 200) {
+          setState(() {
+            _errorMessage =
+                'Could not load the PDF (HTTP ${response.statusCode}). '
+                'Please try again.';
+            _isDownloading = false;
+          });
+          return;
+        }
+        await file.writeAsBytes(response.bodyBytes);
+      } else {
+        // ── Storage path: Supabase SDK handles auth automatically
+        final bytes = await _supabase.storage
+            .from('books')
+            .download(widget.fileUrl);
+        await file.writeAsBytes(bytes);
+      }
 
       setState(() {
         _localPath = file.path;
@@ -88,32 +109,57 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
   }
 
-  // ── SAVE PROGRESS TO SUPABASE ─────────────────────────────────────────────
+  // ── PERIODIC PROGRESS SAVE (every 5 pages while reading) ─────────────────
   Future<void> _saveProgress(int page) async {
-    // Only save every 5 pages to avoid too many writes
     if ((page - _lastSavedPage).abs() < 5 && page != _totalPages - 1) return;
-
     try {
-      await _supabase
-          .from('user_library')
-          .update({
+      await _supabase.from('user_library').update({
         'reading_progress': page,
-        // Mark as completed if on last page
-        if (page >= _totalPages - 1) 'status': 'completed',
-      })
-          .eq('id', widget.libraryEntryId);
-
+        if (page >= _totalPages - 1 && _totalPages > 0) 'status': 'completed',
+      }).eq('id', widget.libraryEntryId);
       _lastSavedPage = page;
     } catch (e) {
-      // Silent fail — don't interrupt reading for a save error
       debugPrint('Progress save failed: $e');
     }
+  }
+
+  // ── FLUSH SAVES BEFORE LEAVING ────────────────────────────────────────────
+  // Awaited explicitly so the library refresh that fires in .then() always
+  // sees the latest progress and page count — no race condition.
+  Future<void> _saveAndPop() async {
+    try {
+      // 1. Commit reading progress
+      await _supabase.from('user_library').update({
+        'reading_progress': _currentPage,
+        if (_currentPage >= _totalPages - 1 && _totalPages > 0)
+          'status': 'completed',
+      }).eq('id', widget.libraryEntryId);
+      _lastSavedPage = _currentPage;
+
+      // 2. Commit total pages (always re-save so the library card shows the count)
+      if (_totalPages > 0 && widget.bookId.isNotEmpty) {
+        await _supabase.from('books')
+            .update({'total_pages': _totalPages})
+            .eq('id', widget.bookId);
+      }
+    } catch (e) {
+      debugPrint('Final save failed: $e');
+    }
+
+    if (mounted) Navigator.of(context).pop();
   }
 
   // ── BUILD ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    // PopScope intercepts the system back gesture/button so we can flush
+    // saves before the route pops (and before .then() fires on the caller).
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) _saveAndPop();
+      },
+      child: Scaffold(
       backgroundColor: AppColors.midnight,
       body: Stack(
         children: [
@@ -140,10 +186,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       _totalPages = pages ?? widget.totalPages;
                       _isReady = true;
                     });
+                    if (pages != null && pages > 0 && widget.bookId.isNotEmpty) {
+                      _supabase.from('books')
+                          .update({'total_pages': pages})
+                          .eq('id', widget.bookId);
+                    }
                   },
-                  onViewCreated: (controller) {
-                    _pdfController = controller;
-                  },
+                  onViewCreated: (_) {},
                   onPageChanged: (page, total) {
                     if (page == null) return;
                     setState(() => _currentPage = page);
@@ -176,7 +225,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
         ],
       ),
-    );
+    ), // Scaffold
+    ); // PopScope
   }
 
   // ── TOP BAR ───────────────────────────────────────────────────────────────
@@ -191,9 +241,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
       ),
       child: Row(
         children: [
-          // Back button
+          // Back button — calls _saveAndPop() to flush saves before leaving
           GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
+            onTap: _saveAndPop,
             child: Container(
               width: 36, height: 36,
               decoration: BoxDecoration(

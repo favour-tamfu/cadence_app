@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
 import '../auth/login_screen.dart';
 import '../auth/signup_screen.dart';
@@ -51,11 +50,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   void _skip() => _goToSignUp();
-
-  Future<void> _markOnboardingSeen() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('seen_onboarding', true);
-  }
 
   void _goToSignUp() {
     // Do NOT mark seen here — mark it after successful signup instead
@@ -864,37 +858,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   // ── SHARED WIDGETS ──────────────────────────────────────────────────────────
 
-  Widget _buildWaveformIcon() {
-    final List<double> heights = [12, 20, 32, 48, 32, 20, 12];
-    final List<Color> colors = [
-      AppColors.muted.withOpacity(0.3),
-      AppColors.muted.withOpacity(0.5),
-      AppColors.muted.withOpacity(0.7),
-      AppColors.amberLight,
-      AppColors.muted.withOpacity(0.7),
-      AppColors.muted.withOpacity(0.5),
-      AppColors.muted.withOpacity(0.3),
-    ];
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: List.generate(7, (i) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 3),
-          child: Container(
-            width: i == 3 ? 10 : 8,
-            height: heights[i],
-            decoration: BoxDecoration(
-              color: colors[i],
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-        );
-      }),
-    );
-  }
-
   Widget _buildBookShelf() {
     // Simple stylised book spines
     final books = [
@@ -948,137 +911,4 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Widget _buildStatChip(String label, String value) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-        decoration: BoxDecoration(
-          color: AppColors.slate,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Column(
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                color: AppColors.muted,
-                fontFamily: 'DM Sans',
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppColors.amber,
-                fontFamily: 'DM Sans',
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionChip(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: AppColors.midnight,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 12,
-          color: AppColors.cream,
-          fontFamily: 'DM Sans',
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFeatureBullet(String icon, String text) {
-    return Row(
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: AppColors.slate,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Center(
-            child: Text(icon, style: const TextStyle(fontSize: 16)),
-          ),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: 14,
-              color: AppColors.cream,
-              fontFamily: 'DM Sans',
-              height: 1.4,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildGoogleIcon() {
-    return SizedBox(
-      width: 18,
-      height: 18,
-      child: CustomPaint(painter: _GoogleLogoPainter()),
-    );
-  }
-}
-
-// ── Google G painter ─────────────────────────────────────────────────────────
-class _GoogleLogoPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..style = PaintingStyle.fill;
-    final c = Offset(size.width / 2, size.height / 2);
-    final r = size.width / 2;
-
-    // Draw quadrants
-    final segments = [
-      {'color': const Color(0xFF4285F4), 'start': -90.0, 'sweep': 90.0},
-      {'color': const Color(0xFF34A853), 'start': 0.0,   'sweep': 90.0},
-      {'color': const Color(0xFFFBBC05), 'start': 90.0,  'sweep': 90.0},
-      {'color': const Color(0xFFEA4335), 'start': 180.0, 'sweep': 90.0},
-    ];
-
-    for (final s in segments) {
-      paint.color = s['color'] as Color;
-      canvas.drawArc(
-        Rect.fromCircle(center: c, radius: r),
-        (s['start'] as double) * 3.14159 / 180,
-        (s['sweep'] as double) * 3.14159 / 180,
-        true,
-        paint,
-      );
-    }
-
-    // White center cutout
-    paint.color = Colors.white;
-    canvas.drawCircle(c, r * 0.55, paint);
-
-    // Blue right bar of G
-    paint.color = const Color(0xFF4285F4);
-    canvas.drawRect(
-      Rect.fromLTWH(c.dx, c.dy - r * 0.2, r * 0.95, r * 0.4),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_) => false;
 }

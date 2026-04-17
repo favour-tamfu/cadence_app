@@ -4,30 +4,25 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/theme/app_colors.dart';
-import '../reader/reader_screen.dart';
+import '../../widgets/book_card.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
 
   @override
-  State<LibraryScreen> createState() => _LibraryScreenState();
+  State<LibraryScreen> createState() => LibraryScreenState();
 }
 
-class _LibraryScreenState extends State<LibraryScreen> {
+class LibraryScreenState extends State<LibraryScreen> {
   final _supabase = Supabase.instance.client;
+  final _searchController = TextEditingController();
 
-  // Currently selected filter
   String _selectedFilter = 'All';
-
-  // All filter options
   final List<String> _filters = [
     'All', 'Reading', 'Completed', 'Uploads', 'Wishlist'
   ];
 
-  // Books loaded from Supabase
   List<Map<String, dynamic>> _books = [];
-
-  // Whether we are loading or uploading
   bool _isLoading = true;
   bool _isUploading = false;
 
@@ -35,7 +30,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void initState() {
     super.initState();
     _loadBooks();
+    _searchController.addListener(() => setState(() {}));
   }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// Called by HomeScreen whenever the Library tab is switched to,
+  /// so progress and page counts are always fresh.
+  void refresh() => _loadBooks();
 
   // ── LOAD BOOKS FROM SUPABASE ───────────────────────────────────────────────
   Future<void> _loadBooks() async {
@@ -44,12 +50,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
     try {
       final userId = _supabase.auth.currentUser!.id;
 
-      // Join user_library with books to get full book details
       final response = await _supabase
           .from('user_library')
           .select('*, books(*)')
           .eq('user_id', userId)
-          .order('created_at', ascending: false);
+          .order('started_at', ascending: false);
 
       setState(() {
         _books = List<Map<String, dynamic>>.from(response);
@@ -70,7 +75,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   // ── UPLOAD PDF ─────────────────────────────────────────────────────────────
   Future<void> _uploadBook() async {
-    // Open the device file picker — PDF only
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf'],
@@ -89,31 +93,26 @@ class _LibraryScreenState extends State<LibraryScreen> {
       final fileName = '$fileId.pdf';
       final filePath = 'users/$userId/books/$fileName';
 
-      // Upload to Supabase Storage
       await _supabase.storage
           .from('books')
           .upload(filePath, File(file.path!));
 
-      // Get the public/signed URL
-      final fileUrl = _supabase.storage
-          .from('books')
-          .getPublicUrl(filePath);
-
-      // Save book record to Firestore books table
+      // Store the storage PATH (not a public URL) so the reader can
+      // download via the authenticated Supabase SDK — required for
+      // private buckets.
       final bookResponse = await _supabase
           .from('books')
           .insert({
         'title': _cleanTitle(file.name),
         'author': 'Unknown',
         'uploaded_by': userId,
-        'file_url': fileUrl,
+        'file_url': filePath,          // storage path, e.g. users/.../books/xxx.pdf
         'total_pages': 0,
         'is_public': false,
       })
           .select()
           .single();
 
-      // Add to user_library join table
       await _supabase.from('user_library').insert({
         'user_id': userId,
         'book_id': bookResponse['id'],
@@ -121,7 +120,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
         'status': 'reading',
       });
 
-      // Reload the library
+      // Reset upload state BEFORE reloading so the button unlocks immediately
+      setState(() => _isUploading = false);
       await _loadBooks();
 
       if (mounted) {
@@ -151,7 +151,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
   }
 
-  // Cleans up file name into a readable book title
   String _cleanTitle(String fileName) {
     return fileName
         .replaceAll('.pdf', '')
@@ -160,18 +159,29 @@ class _LibraryScreenState extends State<LibraryScreen> {
         .trim();
   }
 
-  // ── FILTER BOOKS ──────────────────────────────────────────────────────────
+  // ── FILTER + SEARCH BOOKS ─────────────────────────────────────────────────
   List<Map<String, dynamic>> get _filteredBooks {
-    if (_selectedFilter == 'All') return _books;
+    final query = _searchController.text.trim().toLowerCase();
+
     return _books.where((entry) {
+      // Filter tab
       final status = entry['status'] as String? ?? 'reading';
-      switch (_selectedFilter) {
-        case 'Reading':   return status == 'reading';
-        case 'Completed': return status == 'completed';
-        case 'Wishlist':  return status == 'wishlist';
-        case 'Uploads':   return entry['books']?['is_public'] == false;
-        default:          return true;
-      }
+      final passesFilter = switch (_selectedFilter) {
+        'Reading'   => status == 'reading',
+        'Completed' => status == 'completed',
+        'Wishlist'  => status == 'wishlist',
+        'Uploads'   => entry['books']?['is_public'] == false,
+        _           => true,
+      };
+
+      if (!passesFilter) return false;
+
+      // Search query
+      if (query.isEmpty) return true;
+      final book = entry['books'] as Map<String, dynamic>? ?? {};
+      final title  = (book['title']  as String? ?? '').toLowerCase();
+      final author = (book['author'] as String? ?? '').toLowerCase();
+      return title.contains(query) || author.contains(query);
     }).toList();
   }
 
@@ -199,7 +209,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     ),
                   ),
                   const Spacer(),
-                  // Upload button
                   GestureDetector(
                     onTap: _isUploading ? null : _uploadBook,
                     child: Container(
@@ -216,18 +225,55 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           color: Colors.white,
                         ),
                       )
-                          : const Icon(
-                        Icons.add_rounded,
-                        color: Colors.white,
-                        size: 22,
-                      ),
+                          : const Icon(Icons.add_rounded, color: Colors.white, size: 22),
                     ),
                   ),
                 ],
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
+
+            // ── Search bar
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: TextField(
+                controller: _searchController,
+                style: const TextStyle(fontSize: 14, color: AppColors.cream),
+                decoration: InputDecoration(
+                  hintText: 'Search by title or author…',
+                  prefixIcon: Icon(Icons.search_rounded,
+                      color: AppColors.muted, size: 20),
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? GestureDetector(
+                    onTap: () => _searchController.clear(),
+                    child: Icon(Icons.close_rounded,
+                        color: AppColors.muted, size: 18),
+                  )
+                      : null,
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 10),
+                  filled: true,
+                  fillColor: AppColors.cream.withOpacity(0.05),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                        color: AppColors.cream.withOpacity(0.1)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                        color: AppColors.cream.withOpacity(0.1)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.amber),
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 14),
 
             // ── Filter pills
             SizedBox(
@@ -293,7 +339,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   itemCount: _filteredBooks.length,
                   itemBuilder: (ctx, i) {
-                    return _BookCard(
+                    return BookCard(
                       entry: _filteredBooks[i],
                       onDeleted: _loadBooks,
                     );
@@ -301,7 +347,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               ),
             ),
-
           ],
         ),
       ),
@@ -311,6 +356,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
   // ── EMPTY STATE ────────────────────────────────────────────────────────────
   Widget _buildEmptyState() {
     final isFiltered = _selectedFilter != 'All';
+    final isSearching = _searchController.text.isNotEmpty;
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -318,13 +365,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Icons.collections_bookmark_outlined,
+              isSearching
+                  ? Icons.search_off_rounded
+                  : Icons.collections_bookmark_outlined,
               size: 52,
               color: AppColors.muted.withOpacity(0.4),
             ),
             const SizedBox(height: 20),
             Text(
-              isFiltered
+              isSearching
+                  ? 'No results found.'
+                  : isFiltered
                   ? 'No ${_selectedFilter.toLowerCase()} books yet.'
                   : 'Your library is quiet.',
               textAlign: TextAlign.center,
@@ -336,7 +387,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
             const SizedBox(height: 10),
             Text(
-              isFiltered
+              isSearching
+                  ? 'Try a different title or author name.'
+                  : isFiltered
                   ? 'Change the filter or add a new book.'
                   : 'Tap the + button to upload your first PDF.',
               textAlign: TextAlign.center,
@@ -346,7 +399,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 height: 1.6,
               ),
             ),
-            if (!isFiltered) ...[
+            if (!isFiltered && !isSearching) ...[
               const SizedBox(height: 28),
               GestureDetector(
                 onTap: _uploadBook,
@@ -370,315 +423,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ],
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── BOOK CARD ─────────────────────────────────────────────────────────────────
-class _BookCard extends StatelessWidget {
-  final Map<String, dynamic> entry;
-  final VoidCallback onDeleted;
-
-  const _BookCard({required this.entry, required this.onDeleted});
-
-  @override
-  Widget build(BuildContext context) {
-    final book = entry['books'] as Map<String, dynamic>? ?? {};
-    final title = book['title'] as String? ?? 'Untitled';
-    final author = book['author'] as String? ?? 'Unknown';
-    final totalPages = book['total_pages'] as int? ?? 0;
-    final progress = entry['reading_progress'] as int? ?? 0;
-    final status = entry['status'] as String? ?? 'reading';
-
-    // Progress percentage — avoid divide by zero
-    final pct = totalPages > 0 ? (progress / totalPages).clamp(0.0, 1.0) : 0.0;
-    final pctLabel = totalPages > 0
-        ? '${(pct * 100).round()}%'
-        : 'No pages';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.cream.withOpacity(0.04),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.cream.withOpacity(0.08)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-
-          // ── Book cover placeholder
-          Container(
-            width: 48, height: 66,
-            decoration: BoxDecoration(
-              color: AppColors.midnight3,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: AppColors.cream.withOpacity(0.08),
-              ),
-            ),
-            child: Center(
-              child: Text(
-                title.isNotEmpty ? title[0].toUpperCase() : 'B',
-                style: const TextStyle(
-                  fontFamily: 'PlayfairDisplay',
-                  fontSize: 22,
-                  color: AppColors.amberLight,
-                ),
-              ),
-            ),
-          ),
-
-          const SizedBox(width: 14),
-
-          // ── Book details
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-
-                // Title
-                Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'PlayfairDisplay',
-                    fontSize: 16,
-                    color: AppColors.cream,
-                    height: 1.3,
-                  ),
-                ),
-
-                const SizedBox(height: 3),
-
-                // Author
-                Text(
-                  author,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.muted,
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-
-                // Progress bar
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(2),
-                  child: LinearProgressIndicator(
-                    value: pct.toDouble(),
-                    minHeight: 3,
-                    backgroundColor: AppColors.cream.withOpacity(0.1),
-                    valueColor: AlwaysStoppedAnimation(
-                      status == 'completed'
-                          ? AppColors.success
-                          : AppColors.amber,
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 6),
-
-                // Footer row
-                Row(
-                  children: [
-                    // Status chip
-                    _StatusChip(status: status),
-                    const Spacer(),
-                    // Progress label
-                    Text(
-                      pctLabel,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.muted,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(width: 8),
-
-          // ── Options menu
-          GestureDetector(
-            onTap: () => _showOptions(context),
-            child: Icon(
-              Icons.more_vert_rounded,
-              color: AppColors.muted,
-              size: 20,
-            ),
-          ),
-
-        ],
-      ),
-    );
-  }
-
-  void _showOptions(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.midnight2,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(0, 16, 0, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36, height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.cream.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 20),
-            _optionItem(ctx, Icons.play_arrow_rounded,
-                'Continue reading', AppColors.cream, () {
-                  Navigator.pop(ctx);
-                  final book = entry['books'] as Map<String, dynamic>? ?? {};
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (ctx) => ReaderScreen(
-                        bookTitle: book['title'] ?? 'Untitled',
-                        fileUrl: book['file_url'] ?? '',
-                        libraryEntryId: entry['id'],
-                        initialPage: entry['reading_progress'] ?? 0,
-                        totalPages: book['total_pages'] ?? 0,
-                      ),
-                    ),
-
-                  );
-                }),
-            _optionItem(ctx, Icons.timer_outlined,
-                'Set Pacer', AppColors.cream, () {
-                  Navigator.pop(ctx);
-                  // TODO: set pacer
-                }),
-            _optionItem(ctx, Icons.check_circle_outline_rounded,
-                'Mark as completed', AppColors.success, () async {
-                  Navigator.pop(ctx);
-                  await _updateStatus(context, 'completed');
-                }),
-            _optionItem(ctx, Icons.bookmark_outline_rounded,
-                'Move to wishlist', AppColors.cream, () async {
-                  Navigator.pop(ctx);
-                  await _updateStatus(context, 'wishlist');
-                }),
-            Divider(color: AppColors.cream.withOpacity(0.08)),
-            _optionItem(ctx, Icons.delete_outline_rounded,
-                'Remove from library', const Color(0xFFF09595), () async {
-                  Navigator.pop(ctx);
-                  await _deleteBook(context);
-                }),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _optionItem(BuildContext context, IconData icon,
-      String label, Color color, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-        child: Row(
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(width: 16),
-            Text(
-              label,
-              style: TextStyle(fontSize: 15, color: color),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _updateStatus(BuildContext context, String status) async {
-    try {
-      await Supabase.instance.client
-          .from('user_library')
-          .update({'status': status})
-          .eq('id', entry['id']);
-      onDeleted(); // Refresh the list
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _deleteBook(BuildContext context) async {
-    try {
-      // Remove from user_library
-      await Supabase.instance.client
-          .from('user_library')
-          .delete()
-          .eq('id', entry['id']);
-      onDeleted(); // Refresh the list
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to remove: $e')),
-        );
-      }
-    }
-  }
-}
-
-// ── STATUS CHIP ────────────────────────────────────────────────────────────────
-class _StatusChip extends StatelessWidget {
-  final String status;
-  const _StatusChip({required this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    Color bgColor;
-    Color textColor;
-    String label;
-
-    switch (status) {
-      case 'completed':
-        bgColor = AppColors.success.withOpacity(0.12);
-        textColor = AppColors.success;
-        label = 'Completed';
-        break;
-      case 'wishlist':
-        bgColor = AppColors.cream.withOpacity(0.06);
-        textColor = AppColors.muted;
-        label = 'Wishlist';
-        break;
-      default:
-        bgColor = AppColors.amber.withOpacity(0.1);
-        textColor = AppColors.amberLight;
-        label = 'Reading';
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w500,
-          color: textColor,
         ),
       ),
     );

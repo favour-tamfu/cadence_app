@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/app_colors.dart';
 import '../library/library_screen.dart';
-import '../dashboard/dashboard_screen.dart';
+import '../reader/reader_screen.dart';
 import '../auth/login_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -16,13 +16,28 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+  final _homeKey    = GlobalKey<_HomeContentState>();
+  final _libraryKey = GlobalKey<LibraryScreenState>();
+  late final List<Widget> _screens;
 
-  final List<Widget> _screens = const [
-    _HomeContent(),
-    LibraryScreen(),
-    _DiscoverPlaceholder(),
-    _ProfilePlaceholder(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _screens = [
+      _HomeContent(key: _homeKey),
+      LibraryScreen(key: _libraryKey),
+      const _DiscoverPlaceholder(),
+      const _ProfilePlaceholder(),
+    ];
+  }
+
+  void _onTabTap(int i) {
+    // Silently reload the active screen's data on every tab switch so
+    // Continue Reading, Up Next, and Library are always fresh.
+    if (i == 0) _homeKey.currentState?.refresh();
+    if (i == 1) _libraryKey.currentState?.refresh();
+    setState(() => _currentIndex = i);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         bottomNavigationBar: _BottomNav(
           currentIndex: _currentIndex,
-          onTap: (i) => setState(() => _currentIndex = i),
+          onTap: _onTabTap,
         ),
       ),
     );
@@ -106,17 +121,25 @@ class _BottomNav extends StatelessWidget {
 }
 
 // ── HOME CONTENT ──────────────────────────────────────────────────────────────
-class _HomeContent extends StatelessWidget {
-  const _HomeContent();
+class _HomeContent extends StatefulWidget {
+  const _HomeContent({super.key});
 
-  // Get the user's first name from Supabase auth metadata
+  @override
+  State<_HomeContent> createState() => _HomeContentState();
+}
+
+class _HomeContentState extends State<_HomeContent> {
+  int _refreshCount = 0;
+
+  /// Called by HomeScreen whenever the user taps the Home tab.
+  void refresh() => setState(() => _refreshCount++);
+
   String _getFirstName() {
     final user = Supabase.instance.client.auth.currentUser;
     final fullName = user?.userMetadata?['full_name'] as String?;
     if (fullName != null && fullName.isNotEmpty) {
       return fullName.split(' ').first;
     }
-    // Fallback to email prefix
     final email = user?.email ?? '';
     return email.split('@').first;
   }
@@ -130,13 +153,11 @@ class _HomeContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
-
     return SafeArea(
       child: CustomScrollView(
         slivers: [
 
-          // ── App bar with greeting + profile icon
+          // ── App bar
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(24, 20, 20, 0),
@@ -168,7 +189,6 @@ class _HomeContent extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Profile / menu button
                   GestureDetector(
                     onTap: () => _showProfileMenu(context),
                     child: Container(
@@ -202,7 +222,7 @@ class _HomeContent extends StatelessWidget {
 
           const SliverToBoxAdapter(child: SizedBox(height: 28)),
 
-          // ── Streak hero bar
+          // ── Streak hero
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -233,13 +253,13 @@ class _HomeContent extends StatelessWidget {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: _ContinueReadingCard(),
+              child: _ContinueReadingCard(refreshCount: _refreshCount),
             ),
           ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 28)),
 
-          // ── Up next shelf (horizontal scroll)
+          // ── Up next shelf
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -251,7 +271,7 @@ class _HomeContent extends StatelessWidget {
             ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 12)),
-          SliverToBoxAdapter(child: _UpNextShelf()),
+          SliverToBoxAdapter(child: _UpNextShelf(refreshCount: _refreshCount)),
 
           const SliverToBoxAdapter(child: SizedBox(height: 28)),
 
@@ -304,7 +324,6 @@ class _StreakHero extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Flame icon
           Container(
             width: 40, height: 40,
             decoration: BoxDecoration(
@@ -319,17 +338,13 @@ class _StreakHero extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Text(
-                      '0 day streak',
-                      style: const TextStyle(
-                        fontFamily: 'PlayfairDisplay',
-                        fontSize: 18,
-                        color: AppColors.cream,
-                      ),
-                    ),
-                  ],
+                const Text(
+                  '0 day streak',
+                  style: TextStyle(
+                    fontFamily: 'PlayfairDisplay',
+                    fontSize: 18,
+                    color: AppColors.cream,
+                  ),
                 ),
                 Text(
                   'Read today to start your streak',
@@ -338,7 +353,6 @@ class _StreakHero extends StatelessWidget {
               ],
             ),
           ),
-          // Week dots
           Row(
             children: List.generate(7, (i) {
               final isToday = i == 6;
@@ -384,7 +398,6 @@ class _PacerCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          // Empty state — no book with Pacer set yet
           Row(
             children: [
               const Icon(Icons.timer_outlined,
@@ -428,10 +441,68 @@ class _PacerCard extends StatelessWidget {
 }
 
 // ── CONTINUE READING ──────────────────────────────────────────────────────────
-class _ContinueReadingCard extends StatelessWidget {
+class _ContinueReadingCard extends StatefulWidget {
+  final int refreshCount;
+  const _ContinueReadingCard({required this.refreshCount});
+
+  @override
+  State<_ContinueReadingCard> createState() => _ContinueReadingCardState();
+}
+
+class _ContinueReadingCardState extends State<_ContinueReadingCard> {
+  final _supabase = Supabase.instance.client;
+  Map<String, dynamic>? _entry;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_ContinueReadingCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshCount != widget.refreshCount) _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final userId = _supabase.auth.currentUser!.id;
+      final response = await _supabase
+          .from('user_library')
+          .select('*, books(*)')
+          .eq('user_id', userId)
+          .eq('status', 'reading')
+          .order('started_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      if (mounted) setState(() { _entry = response; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Empty state — no books yet
+    if (_loading) {
+      return Container(
+        height: 90,
+        decoration: BoxDecoration(
+          color: AppColors.cream.withOpacity(0.04),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.cream.withOpacity(0.08)),
+        ),
+        child: const Center(
+          child: CircularProgressIndicator(color: AppColors.amber, strokeWidth: 2),
+        ),
+      );
+    }
+    if (_entry == null) return _buildEmpty();
+    return _buildCard(context);
+  }
+
+  Widget _buildEmpty() {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -441,7 +512,6 @@ class _ContinueReadingCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Book icon placeholder
           Container(
             width: 48, height: 64,
             decoration: BoxDecoration(
@@ -457,9 +527,9 @@ class _ContinueReadingCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Your library is quiet.',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'PlayfairDisplay',
                     fontSize: 17,
                     color: AppColors.cream,
@@ -481,42 +551,287 @@ class _ContinueReadingCard extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildCard(BuildContext context) {
+    final book = _entry!['books'] as Map<String, dynamic>? ?? {};
+    final title = book['title'] as String? ?? 'Untitled';
+    final author = book['author'] as String? ?? 'Unknown';
+    final totalPages = book['total_pages'] as int? ?? 0;
+    final progress = _entry!['reading_progress'] as int? ?? 0;
+    final pct = totalPages > 0 ? (progress / totalPages).clamp(0.0, 1.0) : 0.0;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.cream.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.cream.withOpacity(0.08)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+
+          // Cover
+          Container(
+            width: 52, height: 72,
+            decoration: BoxDecoration(
+              color: AppColors.midnight3,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: AppColors.cream.withOpacity(0.08)),
+            ),
+            child: Center(
+              child: Text(
+                title.isNotEmpty ? title[0].toUpperCase() : 'B',
+                style: const TextStyle(
+                  fontFamily: 'PlayfairDisplay',
+                  fontSize: 26,
+                  color: AppColors.amberLight,
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(width: 16),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'PlayfairDisplay',
+                    fontSize: 17,
+                    color: AppColors.cream,
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(author,
+                    style: TextStyle(fontSize: 12, color: AppColors.muted)),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    value: pct.toDouble(),
+                    minHeight: 3,
+                    backgroundColor: AppColors.cream.withOpacity(0.1),
+                    valueColor: const AlwaysStoppedAnimation(AppColors.amber),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Text(
+                      totalPages > 0
+                          ? 'Page $progress of $totalPages'
+                          : 'Page $progress',
+                      style: TextStyle(fontSize: 11, color: AppColors.muted),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${(pct * 100).round()}%',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.amberLight,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(width: 12),
+
+          // Read button
+          GestureDetector(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => ReaderScreen(
+                bookTitle: title,
+                fileUrl: book['file_url'] ?? '',
+                libraryEntryId: _entry!['id'],
+                bookId: book['id'] ?? '',
+                initialPage: progress,
+                totalPages: totalPages,
+              )),
+            ).then((_) => _load()), // reload card when reader closes
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.amber,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Text(
+                'Read',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ── UP NEXT SHELF ─────────────────────────────────────────────────────────────
-class _UpNextShelf extends StatelessWidget {
-  final List<Map<String, dynamic>> _placeholders = const [
-    {'color': Color(0xFF1C2E42), 'label': 'Add a book'},
-    {'color': Color(0xFF142234), 'label': 'to your'},
-    {'color': Color(0xFF2C3E52), 'label': 'library'},
-  ];
+class _UpNextShelf extends StatefulWidget {
+  final int refreshCount;
+  const _UpNextShelf({required this.refreshCount});
+
+  @override
+  State<_UpNextShelf> createState() => _UpNextShelfState();
+}
+
+class _UpNextShelfState extends State<_UpNextShelf> {
+  final _supabase = Supabase.instance.client;
+  List<Map<String, dynamic>> _books = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_UpNextShelf oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshCount != widget.refreshCount) _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final userId = _supabase.auth.currentUser!.id;
+      final response = await _supabase
+          .from('user_library')
+          .select('*, books(*)')
+          .eq('user_id', userId)
+          .eq('status', 'wishlist')
+          .order('created_at', ascending: false)
+          .limit(5);
+      if (mounted) {
+        setState(() {
+          _books = List<Map<String, dynamic>>.from(response);
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return SizedBox(
+        height: 160,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          itemCount: 3,
+          itemBuilder: (_, __) => Container(
+            width: 100,
+            margin: const EdgeInsets.only(right: 12),
+            decoration: BoxDecoration(
+              color: AppColors.midnight3,
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_books.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+          decoration: BoxDecoration(
+            color: AppColors.cream.withOpacity(0.04),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.cream.withOpacity(0.08)),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.bookmark_outline_rounded,
+                  color: AppColors.muted.withOpacity(0.5), size: 20),
+              const SizedBox(width: 12),
+              Text(
+                'No wishlist books yet.',
+                style: TextStyle(fontSize: 13, color: AppColors.muted),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return SizedBox(
       height: 160,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 24),
-        itemCount: _placeholders.length,
+        itemCount: _books.length,
         itemBuilder: (ctx, i) {
-          final item = _placeholders[i];
-          return Container(
-            width: 100,
-            margin: const EdgeInsets.only(right: 12),
-            decoration: BoxDecoration(
-              color: item['color'],
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.cream.withOpacity(0.06)),
+          final entry = _books[i];
+          final book = entry['books'] as Map<String, dynamic>? ?? {};
+          final title = book['title'] as String? ?? 'Untitled';
+          return GestureDetector(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => ReaderScreen(
+                bookTitle: title,
+                fileUrl: book['file_url'] ?? '',
+                libraryEntryId: entry['id'],
+                bookId: book['id'] ?? '',
+                initialPage: entry['reading_progress'] ?? 0,
+                totalPages: book['total_pages'] ?? 0,
+              )),
             ),
-            child: Center(
-              child: Text(
-                item['label'],
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: AppColors.muted,
-                ),
+            child: Container(
+              width: 100,
+              margin: const EdgeInsets.only(right: 12),
+              decoration: BoxDecoration(
+                color: AppColors.midnight3,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.cream.withOpacity(0.06)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        title.isNotEmpty ? title[0].toUpperCase() : 'B',
+                        style: const TextStyle(
+                          fontFamily: 'PlayfairDisplay',
+                          fontSize: 36,
+                          color: AppColors.amberLight,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
+                    child: Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: AppColors.cream,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           );
@@ -629,7 +944,6 @@ class _ProfileMenuSheet extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Handle bar
           Container(
             width: 36, height: 4,
             decoration: BoxDecoration(
@@ -639,15 +953,12 @@ class _ProfileMenuSheet extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          // Avatar + name
           Container(
             width: 64, height: 64,
             decoration: BoxDecoration(
               color: AppColors.amber.withOpacity(0.12),
               shape: BoxShape.circle,
-              border: Border.all(
-                color: AppColors.amber.withOpacity(0.25),
-              ),
+              border: Border.all(color: AppColors.amber.withOpacity(0.25)),
             ),
             child: Center(
               child: Text(
@@ -680,7 +991,6 @@ class _ProfileMenuSheet extends StatelessWidget {
           const SizedBox(height: 24),
           Divider(color: AppColors.cream.withOpacity(0.08), thickness: 0.5),
 
-          // Menu items
           _menuItem(context, Icons.workspace_premium_outlined,
               'Upgrade to Premium', AppColors.amberLight, () {}),
           _menuItem(context, Icons.bar_chart_rounded,

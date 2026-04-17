@@ -78,6 +78,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
       if (!mounted) return;
 
       if (response.user != null) {
+        // Create profile row in profiles table
+        await _supabase.from('profiles').insert({
+          'id': response.user!.id,
+          'full_name': _nameController.text.trim(),
+          'is_premium': false,
+          'streak': 0,
+        });
+
         // Mark onboarding as seen ONLY on successful signup
         await _markOnboardingSeen();
 
