@@ -136,7 +136,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
               const SizedBox(height: 8),
 
-              Text(
+              const Text(
                 'Log in to continue your reading journey.',
                 style: TextStyle(
                   fontSize: 14,
@@ -185,7 +185,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 alignment: Alignment.centerRight,
                 child: GestureDetector(
                   onTap: _showForgotPassword,
-                  child: Text(
+                  child: const Text(
                     'Forgot password?',
                     style: TextStyle(
                       fontSize: 13,
@@ -253,7 +253,7 @@ class _LoginScreenState extends State<LoginScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
+                  const Text(
                     "Don't have an account? ",
                     style: TextStyle(
                       fontSize: 13,
@@ -268,7 +268,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       );
                     },
-                    child: Text(
+                    child: const Text(
                       'Sign up free',
                       style: TextStyle(
                         fontSize: 13,
@@ -319,7 +319,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              Text(
+              const Text(
                 "Enter your email and we'll send you a reset link.",
                 style: TextStyle(fontSize: 13, color: AppColors.muted),
               ),
@@ -345,7 +345,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     if (!ctx.mounted) return;
                     Navigator.pop(ctx);
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
+                      const SnackBar(
                         content: Text(
                           'Reset link sent — check your inbox.',
                           style: TextStyle(color: AppColors.cream),

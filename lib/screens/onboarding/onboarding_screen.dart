@@ -113,7 +113,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       alignment: Alignment.centerRight,
       child: TextButton(
         onPressed: _skip,
-        child: Text(
+        child: const Text(
           'Skip',
           style: TextStyle(
             fontSize: 14,
@@ -199,7 +199,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             const SizedBox(height: 12),
             TextButton(
               onPressed: _goToLogin,
-              child: Text(
+              child: const Text(
                 'I already have an account',
                 style: TextStyle(
                   fontSize: 14,
@@ -286,7 +286,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           const SizedBox(height: 12),
 
           // ── Tagline
-          Text(
+          const Text(
             'READ WITH PURPOSE',
             style: TextStyle(
               fontSize: 11,
@@ -322,7 +322,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               color: const Color(0xFF2A1A1A),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Column(
+            child: const Column(
               children: [
                 Text(
                   '79%',
@@ -333,7 +333,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     color: AppColors.amber,
                   ),
                 ),
-                const SizedBox(height: 4),
+                SizedBox(height: 4),
                 Text(
                   'of books bought are never finished',
                   style: TextStyle(
@@ -349,7 +349,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
           const SizedBox(height: 32),
 
-          Text(
+          const Text(
             'Sound familiar?',
             style: TextStyle(
               fontFamily: 'PlayfairDisplay',
@@ -359,7 +359,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          Text(
+          const Text(
             'You buy a book with the best intentions. You read the first chapter. Life happens. Three months later, it\'s still sitting there — spine unbroken, making you feel guilty.',
             style: TextStyle(
               fontSize: 15,
@@ -393,7 +393,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'YOUR PACER GOAL',
                   style: TextStyle(
                     fontSize: 10,
@@ -406,7 +406,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
+                    const Text(
                       '18',
                       style: TextStyle(
                         fontFamily: 'PlayfairDisplay',
@@ -429,7 +429,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text(
+                const Text(
                   'Read 18 pages today to stay on track',
                   style: TextStyle(fontSize: 13, color: AppColors.muted),
                 ),
@@ -445,7 +445,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Row(
+                const Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('7 pages read', style: TextStyle(fontSize: 11, color: AppColors.muted)),
@@ -513,11 +513,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ),
         child: Column(
           children: [
-            Text(label, style: TextStyle(fontSize: 9, color: AppColors.muted)),
+            Text(label, style: const TextStyle(fontSize: 9, color: AppColors.muted)),
             const SizedBox(height: 4),
             Text(
               value,
-              style: TextStyle(
+              style: const TextStyle(
                 fontFamily: 'PlayfairDisplay',
                 fontSize: 18,
                 color: AppColors.amberLight,
@@ -605,7 +605,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     color: AppColors.amber.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text(
+                  child: const Text(
                     'AI Tutor · Explanation',
                     style: TextStyle(
                       fontSize: 10,
@@ -634,15 +634,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           Align(
             alignment: Alignment.centerLeft,
             child: RichText(
-              text: TextSpan(
-                style: const TextStyle(
+              text: const TextSpan(
+                style: TextStyle(
                   fontFamily: 'PlayfairDisplay',
                   fontSize: 30,
                   color: AppColors.cream,
                   fontWeight: FontWeight.w400,
                 ),
                 children: [
-                  const TextSpan(text: 'Stuck? Just '),
+                  TextSpan(text: 'Stuck? Just '),
                   TextSpan(
                     text: 'highlight.',
                     style: TextStyle(color: AppColors.amberLight),
@@ -681,7 +681,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         child: Text(
           label,
           textAlign: TextAlign.center,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.w500,
             color: AppColors.amberLight,
@@ -731,7 +731,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
           const SizedBox(height: 8),
 
-          Text(
+          const Text(
             'Free to get started. No credit card needed.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 14, color: AppColors.muted),
@@ -765,8 +765,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           Row(
             children: [
               Expanded(child: Divider(color: AppColors.cream.withOpacity(0.12), thickness: 0.5)),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12),
                 child: Text('or continue with', style: TextStyle(fontSize: 12, color: AppColors.muted)),
               ),
               Expanded(child: Divider(color: AppColors.cream.withOpacity(0.12), thickness: 0.5)),
@@ -804,20 +804,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           // ── Terms
           RichText(
             textAlign: TextAlign.center,
-            text: TextSpan(
+            text: const TextSpan(
               style: TextStyle(fontSize: 11, color: AppColors.muted, height: 1.6),
               children: [
-                const TextSpan(text: 'By signing up you agree to our '),
+                TextSpan(text: 'By signing up you agree to our '),
                 TextSpan(
                   text: 'Terms of Service',
                   style: TextStyle(color: AppColors.amberLight),
                 ),
-                const TextSpan(text: ' and '),
+                TextSpan(text: ' and '),
                 TextSpan(
                   text: 'Privacy Policy',
                   style: TextStyle(color: AppColors.amberLight),
                 ),
-                const TextSpan(text: '. Your data is always private.'),
+                TextSpan(text: '. Your data is always private.'),
               ],
             ),
           ),
@@ -839,7 +839,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             color: AppColors.amber.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(Icons.check, size: 14, color: AppColors.amberLight),
+          child: const Icon(Icons.check, size: 14, color: AppColors.amberLight),
         ),
         const SizedBox(width: 12),
         Expanded(

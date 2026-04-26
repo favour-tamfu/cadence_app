@@ -27,12 +27,12 @@ class BookCard extends StatelessWidget {
             : '–';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
       decoration: BoxDecoration(
-        color: AppColors.cream.withOpacity(0.04),
+        color: AppColors.cream.withValues(alpha:0.04),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.cream.withOpacity(0.08)),
+        border: Border.all(color: AppColors.cream.withValues(alpha:0.08)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -40,11 +40,11 @@ class BookCard extends StatelessWidget {
 
           // ── Book cover placeholder
           Container(
-            width: 48, height: 66,
+            width: 48,
+            height: 66,
             decoration: BoxDecoration(
-              color: AppColors.midnight3,
+              color: _coverColor(title),
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: AppColors.cream.withOpacity(0.08)),
             ),
             child: Center(
               child: Text(
@@ -52,7 +52,7 @@ class BookCard extends StatelessWidget {
                 style: const TextStyle(
                   fontFamily: 'PlayfairDisplay',
                   fontSize: 22,
-                  color: AppColors.amberLight,
+                  color: Colors.white,
                 ),
               ),
             ),
@@ -74,15 +74,15 @@ class BookCard extends StatelessWidget {
                     fontFamily: 'PlayfairDisplay',
                     fontSize: 16,
                     color: AppColors.cream,
-                    height: 1.3,
+                    height: 1.35,
                   ),
                 ),
 
                 const SizedBox(height: 3),
 
                 Text(
-                  author,
-                  style: TextStyle(fontSize: 12, color: AppColors.muted),
+                  author == 'Unknown' ? 'PDF Document' : author,
+                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
                 ),
 
                 const SizedBox(height: 10),
@@ -92,7 +92,7 @@ class BookCard extends StatelessWidget {
                   child: LinearProgressIndicator(
                     value: pct.toDouble(),
                     minHeight: 3,
-                    backgroundColor: AppColors.cream.withOpacity(0.1),
+                    backgroundColor: AppColors.cream.withValues(alpha:0.1),
                     valueColor: AlwaysStoppedAnimation(
                       status == 'completed' ? AppColors.success : AppColors.amber,
                     ),
@@ -107,7 +107,7 @@ class BookCard extends StatelessWidget {
                     const Spacer(),
                     Text(
                       pctLabel,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 11,
                         color: AppColors.muted,
                         fontWeight: FontWeight.w500,
@@ -124,11 +124,27 @@ class BookCard extends StatelessWidget {
           // ── Options menu
           GestureDetector(
             onTap: () => _showOptions(context),
-            child: Icon(Icons.more_vert_rounded, color: AppColors.muted, size: 20),
+            child: const Icon(Icons.more_vert_rounded, color: AppColors.muted, size: 20),
           ),
         ],
       ),
     );
+  }
+
+  Color _coverColor(String title) {
+    final colors = [
+      const Color(0xFF1A3A5C),
+      const Color(0xFF2D4A22),
+      const Color(0xFF4A1A2C),
+      const Color(0xFF2A3A4A),
+      const Color(0xFF3A2A4A),
+      const Color(0xFF1A4A3A),
+      const Color(0xFF4A3A1A),
+    ];
+    final index = title.isNotEmpty
+        ? title.codeUnitAt(0) % colors.length
+        : 0;
+    return colors[index];
   }
 
   void _showOptions(BuildContext context) {
@@ -147,7 +163,7 @@ class BookCard extends StatelessWidget {
             Container(
               width: 36, height: 4,
               decoration: BoxDecoration(
-                color: AppColors.cream.withOpacity(0.15),
+                color: AppColors.cream.withValues(alpha:0.15),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -157,8 +173,11 @@ class BookCard extends StatelessWidget {
               Navigator.pop(ctx);
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => ReaderScreen(
-                  bookTitle: book['title'] ?? 'Untitled',
+                  bookTitle: Uri.decodeComponent(
+                    book['title'] ?? 'Untitled'.replaceAll('+', ' '),
+                  ),
                   fileUrl: book['file_url'] ?? '',
+                  fileType: book['file_type'] ?? 'pdf',
                   libraryEntryId: entry['id'],
                   bookId: book['id'] ?? '',
                   initialPage: entry['reading_progress'] ?? 0,
@@ -181,7 +200,7 @@ class BookCard extends StatelessWidget {
               Navigator.pop(ctx);
               await _updateStatus(context, 'wishlist');
             }),
-            Divider(color: AppColors.cream.withOpacity(0.08)),
+            Divider(color: AppColors.cream.withValues(alpha:0.08)),
             _optionItem(ctx, Icons.delete_outline_rounded,
                 'Remove from library', const Color(0xFFF09595), () async {
               Navigator.pop(ctx);
@@ -256,17 +275,17 @@ class StatusChip extends StatelessWidget {
 
     switch (status) {
       case 'completed':
-        bgColor = AppColors.success.withOpacity(0.12);
+        bgColor = AppColors.success.withValues(alpha:0.12);
         textColor = AppColors.success;
         label = 'Completed';
         break;
       case 'wishlist':
-        bgColor = AppColors.cream.withOpacity(0.06);
+        bgColor = AppColors.cream.withValues(alpha:0.06);
         textColor = AppColors.muted;
         label = 'Wishlist';
         break;
       default:
-        bgColor = AppColors.amber.withOpacity(0.1);
+        bgColor = AppColors.amber.withValues(alpha:0.1);
         textColor = AppColors.amberLight;
         label = 'Reading';
     }

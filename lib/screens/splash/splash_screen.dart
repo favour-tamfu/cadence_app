@@ -35,9 +35,9 @@ class _SplashScreenState extends State<SplashScreen>
 
   final List<double> _maxHeights = [20, 36, 56, 80, 56, 36, 20];
   final List<Color> _barColors = [
-    Color(0x30F7F2EA), Color(0x59F7F2EA), Color(0x9EF7F2EA),
+    const Color(0x30F7F2EA), const Color(0x59F7F2EA), const Color(0x9EF7F2EA),
     AppColors.amberLight,
-    Color(0x9EF7F2EA), Color(0x59F7F2EA), Color(0x30F7F2EA),
+    const Color(0x9EF7F2EA), const Color(0x59F7F2EA), const Color(0x30F7F2EA),
   ];
 
   @override
@@ -219,7 +219,7 @@ class _SplashScreenState extends State<SplashScreen>
                 // "READ WITH PURPOSE" subtitle
                 FadeTransition(
                   opacity: _wordFade,
-                  child: Text(
+                  child: const Text(
                     'READ WITH PURPOSE',
                     style: TextStyle(
                       fontSize: 10,

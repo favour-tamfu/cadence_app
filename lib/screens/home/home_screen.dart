@@ -70,7 +70,7 @@ class _BottomNav extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.midnight,
         border: Border(
-          top: BorderSide(color: AppColors.cream.withOpacity(0.07), width: 0.5),
+          top: BorderSide(color: AppColors.cream.withValues(alpha:0.07), width: 0.5),
         ),
       ),
       child: SafeArea(
@@ -170,7 +170,7 @@ class _HomeContentState extends State<_HomeContent> {
                       children: [
                         Text(
                           '${_getGreeting()},',
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 14,
                             color: AppColors.muted,
                             fontWeight: FontWeight.w400,
@@ -181,7 +181,7 @@ class _HomeContentState extends State<_HomeContent> {
                           _getFirstName(),
                           style: const TextStyle(
                             fontFamily: 'PlayfairDisplay',
-                            fontSize: 28,
+                            fontSize: 24,
                             color: AppColors.cream,
                             fontWeight: FontWeight.w400,
                           ),
@@ -194,10 +194,10 @@ class _HomeContentState extends State<_HomeContent> {
                     child: Container(
                       width: 42, height: 42,
                       decoration: BoxDecoration(
-                        color: AppColors.cream.withOpacity(0.06),
+                        color: AppColors.cream.withValues(alpha:0.06),
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: AppColors.cream.withOpacity(0.12),
+                          color: AppColors.cream.withValues(alpha:0.12),
                         ),
                       ),
                       child: Center(
@@ -217,6 +217,23 @@ class _HomeContentState extends State<_HomeContent> {
                   ),
                 ],
               ),
+            ),
+          ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 20)),
+
+          // ── Continue reading (most important — moved to top)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24),
+              child: _SectionLabel(label: 'Continue reading'),
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 12)),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: _ContinueReadingCard(refreshCount: _refreshCount),
             ),
           ),
 
@@ -242,38 +259,10 @@ class _HomeContentState extends State<_HomeContent> {
 
           const SliverToBoxAdapter(child: SizedBox(height: 28)),
 
-          // ── Continue reading
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: _SectionLabel(label: 'Continue reading'),
-            ),
+          // ── Up next (hidden until real data is wired in Sprint 3)
+          const SliverToBoxAdapter(
+            child: SizedBox.shrink(),
           ),
-          const SliverToBoxAdapter(child: SizedBox(height: 12)),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: _ContinueReadingCard(refreshCount: _refreshCount),
-            ),
-          ),
-
-          const SliverToBoxAdapter(child: SizedBox(height: 28)),
-
-          // ── Up next shelf
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: _SectionLabel(
-                label: 'Up next',
-                action: 'See library',
-                onAction: () {},
-              ),
-            ),
-          ),
-          const SliverToBoxAdapter(child: SizedBox(height: 12)),
-          SliverToBoxAdapter(child: _UpNextShelf(refreshCount: _refreshCount)),
-
-          const SliverToBoxAdapter(child: SizedBox(height: 28)),
 
           // ── Discover teaser
           SliverToBoxAdapter(
@@ -318,27 +307,27 @@ class _StreakHero extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
-        color: AppColors.cream.withOpacity(0.04),
+        color: AppColors.cream.withValues(alpha:0.04),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.cream.withOpacity(0.07)),
+        border: Border.all(color: AppColors.cream.withValues(alpha:0.07)),
       ),
       child: Row(
         children: [
           Container(
             width: 40, height: 40,
             decoration: BoxDecoration(
-              color: AppColors.amber.withOpacity(0.12),
+              color: AppColors.amber.withValues(alpha:0.12),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(Icons.local_fire_department_rounded,
                 color: AppColors.amberLight, size: 22),
           ),
           const SizedBox(width: 14),
-          Expanded(
+          const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   '0 day streak',
                   style: TextStyle(
                     fontFamily: 'PlayfairDisplay',
@@ -362,8 +351,8 @@ class _StreakHero extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: isToday
-                      ? AppColors.amber.withOpacity(0.4)
-                      : AppColors.cream.withOpacity(0.1),
+                      ? AppColors.amber.withValues(alpha:0.4)
+                      : AppColors.cream.withValues(alpha:0.1),
                 ),
               );
             }),
@@ -381,14 +370,14 @@ class _PacerCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: AppColors.amber.withOpacity(0.1),
+        color: AppColors.amber.withValues(alpha:0.1),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.amber.withOpacity(0.28)),
+        border: Border.all(color: AppColors.amber.withValues(alpha:0.28)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             "TODAY'S PACER GOAL",
             style: TextStyle(
               fontSize: 10,
@@ -408,7 +397,7 @@ class _PacerCard extends StatelessWidget {
                   'No Pacer set yet — add a book to your library and set a finish date.',
                   style: TextStyle(
                     fontSize: 14,
-                    color: AppColors.cream.withOpacity(0.65),
+                    color: AppColors.cream.withValues(alpha:0.65),
                     height: 1.5,
                   ),
                 ),
@@ -425,7 +414,7 @@ class _PacerCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Text(
-                'Upload a book →',
+                'Go to Library →',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -489,9 +478,9 @@ class _ContinueReadingCardState extends State<_ContinueReadingCard> {
       return Container(
         height: 90,
         decoration: BoxDecoration(
-          color: AppColors.cream.withOpacity(0.04),
+          color: AppColors.cream.withValues(alpha:0.04),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.cream.withOpacity(0.08)),
+          border: Border.all(color: AppColors.cream.withValues(alpha:0.08)),
         ),
         child: const Center(
           child: CircularProgressIndicator(color: AppColors.amber, strokeWidth: 2),
@@ -506,9 +495,9 @@ class _ContinueReadingCardState extends State<_ContinueReadingCard> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.cream.withOpacity(0.04),
+        color: AppColors.cream.withValues(alpha:0.04),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.cream.withOpacity(0.08)),
+        border: Border.all(color: AppColors.cream.withValues(alpha:0.08)),
       ),
       child: Row(
         children: [
@@ -517,17 +506,17 @@ class _ContinueReadingCardState extends State<_ContinueReadingCard> {
             decoration: BoxDecoration(
               color: AppColors.midnight3,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: AppColors.cream.withOpacity(0.08)),
+              border: Border.all(color: AppColors.cream.withValues(alpha:0.08)),
             ),
             child: Icon(Icons.menu_book_rounded,
-                color: AppColors.muted.withOpacity(0.5), size: 22),
+                color: AppColors.muted.withValues(alpha:0.5), size: 22),
           ),
           const SizedBox(width: 16),
-          Expanded(
+          const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Your library is quiet.',
                   style: TextStyle(
                     fontFamily: 'PlayfairDisplay',
@@ -535,7 +524,7 @@ class _ContinueReadingCardState extends State<_ContinueReadingCard> {
                     color: AppColors.cream,
                   ),
                 ),
-                const SizedBox(height: 4),
+                SizedBox(height: 4),
                 Text(
                   "Let's change that. Upload your first book.",
                   style: TextStyle(
@@ -563,9 +552,9 @@ class _ContinueReadingCardState extends State<_ContinueReadingCard> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.cream.withOpacity(0.04),
+        color: AppColors.cream.withValues(alpha:0.04),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.cream.withOpacity(0.08)),
+        border: Border.all(color: AppColors.cream.withValues(alpha:0.08)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -577,7 +566,7 @@ class _ContinueReadingCardState extends State<_ContinueReadingCard> {
             decoration: BoxDecoration(
               color: AppColors.midnight3,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: AppColors.cream.withOpacity(0.08)),
+              border: Border.all(color: AppColors.cream.withValues(alpha:0.08)),
             ),
             child: Center(
               child: Text(
@@ -610,14 +599,14 @@ class _ContinueReadingCardState extends State<_ContinueReadingCard> {
                 ),
                 const SizedBox(height: 3),
                 Text(author,
-                    style: TextStyle(fontSize: 12, color: AppColors.muted)),
+                    style: const TextStyle(fontSize: 12, color: AppColors.muted)),
                 const SizedBox(height: 10),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(2),
                   child: LinearProgressIndicator(
                     value: pct.toDouble(),
                     minHeight: 3,
-                    backgroundColor: AppColors.cream.withOpacity(0.1),
+                    backgroundColor: AppColors.cream.withValues(alpha:0.1),
                     valueColor: const AlwaysStoppedAnimation(AppColors.amber),
                   ),
                 ),
@@ -628,7 +617,7 @@ class _ContinueReadingCardState extends State<_ContinueReadingCard> {
                       totalPages > 0
                           ? 'Page $progress of $totalPages'
                           : 'Page $progress',
-                      style: TextStyle(fontSize: 11, color: AppColors.muted),
+                      style: const TextStyle(fontSize: 11, color: AppColors.muted),
                     ),
                     const Spacer(),
                     Text(
@@ -653,6 +642,7 @@ class _ContinueReadingCardState extends State<_ContinueReadingCard> {
               MaterialPageRoute(builder: (_) => ReaderScreen(
                 bookTitle: title,
                 fileUrl: book['file_url'] ?? '',
+                fileType: book['file_type'] ?? 'pdf',
                 libraryEntryId: _entry!['id'],
                 bookId: book['id'] ?? '',
                 initialPage: progress,
@@ -755,16 +745,16 @@ class _UpNextShelfState extends State<_UpNextShelf> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
           decoration: BoxDecoration(
-            color: AppColors.cream.withOpacity(0.04),
+            color: AppColors.cream.withValues(alpha:0.04),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.cream.withOpacity(0.08)),
+            border: Border.all(color: AppColors.cream.withValues(alpha:0.08)),
           ),
           child: Row(
             children: [
               Icon(Icons.bookmark_outline_rounded,
-                  color: AppColors.muted.withOpacity(0.5), size: 20),
+                  color: AppColors.muted.withValues(alpha:0.5), size: 20),
               const SizedBox(width: 12),
-              Text(
+              const Text(
                 'No wishlist books yet.',
                 style: TextStyle(fontSize: 13, color: AppColors.muted),
               ),
@@ -789,6 +779,7 @@ class _UpNextShelfState extends State<_UpNextShelf> {
               MaterialPageRoute(builder: (_) => ReaderScreen(
                 bookTitle: title,
                 fileUrl: book['file_url'] ?? '',
+                fileType: book['file_type'] ?? 'pdf',
                 libraryEntryId: entry['id'],
                 bookId: book['id'] ?? '',
                 initialPage: entry['reading_progress'] ?? 0,
@@ -801,7 +792,7 @@ class _UpNextShelfState extends State<_UpNextShelf> {
               decoration: BoxDecoration(
                 color: AppColors.midnight3,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.cream.withOpacity(0.06)),
+                border: Border.all(color: AppColors.cream.withValues(alpha:0.06)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -849,27 +840,27 @@ class _DiscoverTeaser extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 24),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.cream.withOpacity(0.04),
+        color: AppColors.cream.withValues(alpha:0.04),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.cream.withOpacity(0.08)),
+        border: Border.all(color: AppColors.cream.withValues(alpha:0.08)),
       ),
       child: Row(
         children: [
           Container(
             width: 44, height: 44,
             decoration: BoxDecoration(
-              color: AppColors.amber.withOpacity(0.1),
+              color: AppColors.amber.withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(Icons.explore_outlined,
                 color: AppColors.amberLight, size: 22),
           ),
           const SizedBox(width: 14),
-          Expanded(
+          const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Community books',
                   style: TextStyle(
                     fontFamily: 'PlayfairDisplay',
@@ -877,9 +868,9 @@ class _DiscoverTeaser extends StatelessWidget {
                     color: AppColors.cream,
                   ),
                 ),
-                const SizedBox(height: 3),
+                SizedBox(height: 3),
                 Text(
-                  'Discover what others are reading and publishing.',
+                  'Trending this week — see what the community is reading.',
                   style: TextStyle(fontSize: 12, color: AppColors.muted, height: 1.5),
                 ),
               ],
@@ -907,7 +898,7 @@ class _SectionLabel extends StatelessWidget {
       children: [
         Text(
           label.toUpperCase(),
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.w500,
             color: AppColors.muted,
@@ -919,7 +910,7 @@ class _SectionLabel extends StatelessWidget {
             onTap: onAction,
             child: Text(
               action!,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 12,
                 color: AppColors.amberLight,
                 fontWeight: FontWeight.w500,
@@ -947,7 +938,7 @@ class _ProfileMenuSheet extends StatelessWidget {
           Container(
             width: 36, height: 4,
             decoration: BoxDecoration(
-              color: AppColors.cream.withOpacity(0.15),
+              color: AppColors.cream.withValues(alpha:0.15),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -956,9 +947,9 @@ class _ProfileMenuSheet extends StatelessWidget {
           Container(
             width: 64, height: 64,
             decoration: BoxDecoration(
-              color: AppColors.amber.withOpacity(0.12),
+              color: AppColors.amber.withValues(alpha:0.12),
               shape: BoxShape.circle,
-              border: Border.all(color: AppColors.amber.withOpacity(0.25)),
+              border: Border.all(color: AppColors.amber.withValues(alpha:0.25)),
             ),
             child: Center(
               child: Text(
@@ -985,11 +976,11 @@ class _ProfileMenuSheet extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             email,
-            style: TextStyle(fontSize: 13, color: AppColors.muted),
+            style: const TextStyle(fontSize: 13, color: AppColors.muted),
           ),
 
           const SizedBox(height: 24),
-          Divider(color: AppColors.cream.withOpacity(0.08), thickness: 0.5),
+          Divider(color: AppColors.cream.withValues(alpha:0.08), thickness: 0.5),
 
           _menuItem(context, Icons.workspace_premium_outlined,
               'Upgrade to Premium', AppColors.amberLight, () {}),
@@ -1000,7 +991,7 @@ class _ProfileMenuSheet extends StatelessWidget {
           _menuItem(context, Icons.help_outline_rounded,
               'Help & feedback', AppColors.cream, () {}),
 
-          Divider(color: AppColors.cream.withOpacity(0.08), thickness: 0.5),
+          Divider(color: AppColors.cream.withValues(alpha:0.08), thickness: 0.5),
 
           _menuItem(context, Icons.logout_rounded,
               'Log out', const Color(0xFFF09595), () async {
@@ -1038,7 +1029,7 @@ class _ProfileMenuSheet extends StatelessWidget {
             ),
             const Spacer(),
             if (label != 'Log out')
-              Icon(Icons.arrow_forward_ios_rounded,
+              const Icon(Icons.arrow_forward_ios_rounded,
                   color: AppColors.muted, size: 13),
           ],
         ),
@@ -1053,7 +1044,7 @@ class _DiscoverPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return const Scaffold(
       backgroundColor: AppColors.midnight,
       body: Center(
         child: Text('Discover — coming soon',
@@ -1068,7 +1059,7 @@ class _ProfilePlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return const Scaffold(
       backgroundColor: AppColors.midnight,
       body: Center(
         child: Text('Profile — coming soon',

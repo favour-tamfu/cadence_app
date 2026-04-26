@@ -22,6 +22,9 @@ class LibraryScreenState extends State<LibraryScreen> {
     'All', 'Reading', 'Completed', 'Uploads', 'Wishlist'
   ];
 
+  String _sortBy = 'Recent';
+  final List<String> _sortOptions = ['Recent', 'Title', 'Progress'];
+
   List<Map<String, dynamic>> _books = [];
   bool _isLoading = true;
   bool _isUploading = false;
@@ -77,7 +80,7 @@ class LibraryScreenState extends State<LibraryScreen> {
   Future<void> _uploadBook() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf'],
+      allowedExtensions: ['pdf', 'epub', 'doc'],
     );
 
     if (result == null || result.files.isEmpty) return;
@@ -107,6 +110,7 @@ class LibraryScreenState extends State<LibraryScreen> {
         'author': 'Unknown',
         'uploaded_by': userId,
         'file_url': filePath,          // storage path, e.g. users/.../books/xxx.pdf
+        'file_type': file.extension?.toLowerCase() ?? 'pdf',
         'total_pages': 0,
         'is_public': false,
       })
@@ -152,37 +156,67 @@ class LibraryScreenState extends State<LibraryScreen> {
   }
 
   String _cleanTitle(String fileName) {
-    return fileName
+    return Uri.decodeComponent(fileName)
         .replaceAll('.pdf', '')
+        .replaceAll('.epub', '')
+        .replaceAll('.doc', '')
+        .replaceAll('+', ' ')
         .replaceAll('_', ' ')
         .replaceAll('-', ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
   }
 
-  // ── FILTER + SEARCH BOOKS ─────────────────────────────────────────────────
+  // ── FILTER + SEARCH + SORT BOOKS ──────────────────────────────────────────
   List<Map<String, dynamic>> get _filteredBooks {
     final query = _searchController.text.trim().toLowerCase();
+    List<Map<String, dynamic>> result = _books;
 
-    return _books.where((entry) {
-      // Filter tab
-      final status = entry['status'] as String? ?? 'reading';
-      final passesFilter = switch (_selectedFilter) {
-        'Reading'   => status == 'reading',
-        'Completed' => status == 'completed',
-        'Wishlist'  => status == 'wishlist',
-        'Uploads'   => entry['books']?['is_public'] == false,
-        _           => true,
-      };
+    // Apply filter tab
+    if (_selectedFilter != 'All') {
+      result = result.where((entry) {
+        final status = entry['status'] as String? ?? 'reading';
+        switch (_selectedFilter) {
+          case 'Reading':   return status == 'reading';
+          case 'Completed': return status == 'completed';
+          case 'Wishlist':  return status == 'wishlist';
+          case 'Uploads':   return entry['books']?['is_public'] == false;
+          default:          return true;
+        }
+      }).toList();
+    }
 
-      if (!passesFilter) return false;
+    // Apply search
+    if (query.isNotEmpty) {
+      result = result.where((entry) {
+        final book = entry['books'] as Map<String, dynamic>? ?? {};
+        final title  = (book['title']  as String? ?? '').toLowerCase();
+        final author = (book['author'] as String? ?? '').toLowerCase();
+        return title.contains(query) || author.contains(query);
+      }).toList();
+    }
 
-      // Search query
-      if (query.isEmpty) return true;
-      final book = entry['books'] as Map<String, dynamic>? ?? {};
-      final title  = (book['title']  as String? ?? '').toLowerCase();
-      final author = (book['author'] as String? ?? '').toLowerCase();
-      return title.contains(query) || author.contains(query);
-    }).toList();
+    // Apply sort
+    switch (_sortBy) {
+      case 'Title':
+        result.sort((a, b) {
+          final titleA = (a['books']?['title'] as String? ?? '').toLowerCase();
+          final titleB = (b['books']?['title'] as String? ?? '').toLowerCase();
+          return titleA.compareTo(titleB);
+        });
+        break;
+      case 'Progress':
+        result.sort((a, b) {
+          final progA = a['reading_progress'] as int? ?? 0;
+          final progB = b['reading_progress'] as int? ?? 0;
+          return progB.compareTo(progA);
+        });
+        break;
+      default: // Recent — already ordered by started_at from Supabase
+        break;
+    }
+
+    return result;
   }
 
   // ── BUILD ─────────────────────────────────────────────────────────────────
@@ -213,7 +247,7 @@ class LibraryScreenState extends State<LibraryScreen> {
                     onTap: _isUploading ? null : _uploadBook,
                     child: Container(
                       width: 40, height: 40,
-                      decoration: BoxDecoration(
+                      decoration: const BoxDecoration(
                         color: AppColors.amber,
                         shape: BoxShape.circle,
                       ),
@@ -242,28 +276,28 @@ class LibraryScreenState extends State<LibraryScreen> {
                 style: const TextStyle(fontSize: 14, color: AppColors.cream),
                 decoration: InputDecoration(
                   hintText: 'Search by title or author…',
-                  prefixIcon: Icon(Icons.search_rounded,
+                  prefixIcon: const Icon(Icons.search_rounded,
                       color: AppColors.muted, size: 20),
                   suffixIcon: _searchController.text.isNotEmpty
                       ? GestureDetector(
                     onTap: () => _searchController.clear(),
-                    child: Icon(Icons.close_rounded,
+                    child: const Icon(Icons.close_rounded,
                         color: AppColors.muted, size: 18),
                   )
                       : null,
                   contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16, vertical: 10),
                   filled: true,
-                  fillColor: AppColors.cream.withOpacity(0.05),
+                  fillColor: AppColors.cream.withValues(alpha:0.05),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
-                        color: AppColors.cream.withOpacity(0.1)),
+                        color: AppColors.cream.withValues(alpha:0.1)),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
-                        color: AppColors.cream.withOpacity(0.1)),
+                        color: AppColors.cream.withValues(alpha:0.1)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -296,12 +330,12 @@ class LibraryScreenState extends State<LibraryScreen> {
                       decoration: BoxDecoration(
                         color: isActive
                             ? AppColors.amber
-                            : AppColors.cream.withOpacity(0.06),
+                            : AppColors.cream.withValues(alpha:0.06),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
                           color: isActive
                               ? AppColors.amber
-                              : AppColors.cream.withOpacity(0.12),
+                              : AppColors.cream.withValues(alpha:0.12),
                         ),
                       ),
                       child: Text(
@@ -319,6 +353,36 @@ class LibraryScreenState extends State<LibraryScreen> {
             ),
 
             const SizedBox(height: 20),
+
+            // ── Sort row
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
+              child: Row(
+                children: [
+                  Text(
+                    '${_filteredBooks.length} book${_filteredBooks.length == 1 ? '' : 's'}',
+                    style: const TextStyle(fontSize: 12, color: AppColors.muted),
+                  ),
+                  const Spacer(),
+                  const Text('Sort: ', style: TextStyle(fontSize: 12, color: AppColors.muted)),
+                  DropdownButton<String>(
+                    value: _sortBy,
+                    dropdownColor: AppColors.midnight2,
+                    style: const TextStyle(fontSize: 12, color: AppColors.amberLight),
+                    underline: const SizedBox(),
+                    icon: const Icon(Icons.expand_more_rounded,
+                        size: 16, color: AppColors.amberLight),
+                    items: _sortOptions.map((s) => DropdownMenuItem(
+                      value: s,
+                      child: Text(s),
+                    )).toList(),
+                    onChanged: (val) {
+                      if (val != null) setState(() => _sortBy = val);
+                    },
+                  ),
+                ],
+              ),
+            ),
 
             // ── Book list
             Expanded(
@@ -369,7 +433,7 @@ class LibraryScreenState extends State<LibraryScreen> {
                   ? Icons.search_off_rounded
                   : Icons.collections_bookmark_outlined,
               size: 52,
-              color: AppColors.muted.withOpacity(0.4),
+              color: AppColors.muted.withValues(alpha:0.4),
             ),
             const SizedBox(height: 20),
             Text(
@@ -393,7 +457,7 @@ class LibraryScreenState extends State<LibraryScreen> {
                   ? 'Change the filter or add a new book.'
                   : 'Tap the + button to upload your first PDF.',
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 14,
                 color: AppColors.muted,
                 height: 1.6,

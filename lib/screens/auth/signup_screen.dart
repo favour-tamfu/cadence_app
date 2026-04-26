@@ -125,7 +125,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
               // ── Back button
               GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
-                child: Icon(
+                child: const Icon(
                   Icons.arrow_back_ios,
                   color: AppColors.muted,
                   size: 20,
@@ -148,7 +148,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
               const SizedBox(height: 8),
 
-              Text(
+              const Text(
                 'Free forever. No credit card needed.',
                 style: TextStyle(
                   fontSize: 14,
@@ -257,7 +257,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
+                  const Text(
                     'Already have an account? ',
                     style: TextStyle(
                       fontSize: 13,
@@ -272,7 +272,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         ),
                       );
                     },
-                    child: Text(
+                    child: const Text(
                       'Log in',
                       style: TextStyle(
                         fontSize: 13,
