@@ -10,6 +10,23 @@ class BookCard extends StatelessWidget {
 
   const BookCard({super.key, required this.entry, required this.onDeleted});
 
+  void _openBook(BuildContext context) {
+    final book = entry['books'] as Map<String, dynamic>? ?? {};
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ReaderScreen(
+          bookTitle: book['title'] as String? ?? 'Untitled',
+          fileUrl: book['file_url'] as String? ?? '',
+          fileType: book['file_type'] as String? ?? 'pdf',
+          libraryEntryId: entry['id'] as String,
+          bookId: book['id'] as String? ?? '',
+          initialPage: entry['reading_progress'] as int? ?? 0,
+          totalPages: book['total_pages'] as int? ?? 0,
+        ),
+      ),
+    ).then((_) => onDeleted());
+  }
+
   @override
   Widget build(BuildContext context) {
     final book = entry['books'] as Map<String, dynamic>? ?? {};
@@ -19,136 +36,149 @@ class BookCard extends StatelessWidget {
     final progress = entry['reading_progress'] as int? ?? 0;
     final status = entry['status'] as String? ?? 'reading';
 
-    final pct = totalPages > 0 ? (progress / totalPages).clamp(0.0, 1.0) : 0.0;
+    final pct = totalPages > 0
+        ? (progress / totalPages).clamp(0.0, 1.0)
+        : 0.0;
+    final hasProgress = progress > 0 || totalPages > 0;
     final pctLabel = totalPages > 0
         ? '${(pct * 100).round()}%'
         : progress > 0
             ? 'p.$progress'
-            : '–';
+            : null;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-      decoration: BoxDecoration(
-        color: AppColors.cream.withValues(alpha:0.04),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.cream.withValues(alpha:0.08)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return GestureDetector(
+      onTap: () => _openBook(context),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+        decoration: BoxDecoration(
+          color: AppColors.cream.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.cream.withValues(alpha: 0.08)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
 
-          // ── Book cover placeholder
-          Container(
-            width: 48,
-            height: 66,
-            decoration: BoxDecoration(
-              color: _coverColor(title),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Center(
-              child: Text(
-                title.isNotEmpty ? title[0].toUpperCase() : 'B',
-                style: const TextStyle(
-                  fontFamily: 'PlayfairDisplay',
-                  fontSize: 22,
-                  color: Colors.white,
+            // ── Book cover placeholder
+            Container(
+              width: 48,
+              height: 66,
+              decoration: BoxDecoration(
+                color: _coverColor(title),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Center(
+                child: Text(
+                  title.isNotEmpty ? title[0].toUpperCase() : 'B',
+                  style: const TextStyle(
+                    fontFamily: 'PlayfairDisplay',
+                    fontSize: 22,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ),
-          ),
 
-          const SizedBox(width: 14),
+            const SizedBox(width: 14),
 
-          // ── Book details
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+            // ── Book details
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
 
-                Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'PlayfairDisplay',
-                    fontSize: 16,
-                    color: AppColors.cream,
-                    height: 1.35,
-                  ),
-                ),
-
-                const SizedBox(height: 3),
-
-                Text(
-                  author == 'Unknown' ? 'PDF Document' : author,
-                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
-                ),
-
-                const SizedBox(height: 10),
-
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(2),
-                  child: LinearProgressIndicator(
-                    value: pct.toDouble(),
-                    minHeight: 3,
-                    backgroundColor: AppColors.cream.withValues(alpha:0.1),
-                    valueColor: AlwaysStoppedAnimation(
-                      status == 'completed' ? AppColors.success : AppColors.amber,
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'PlayfairDisplay',
+                      fontSize: 16,
+                      color: AppColors.cream,
+                      height: 1.35,
                     ),
                   ),
-                ),
 
-                const SizedBox(height: 6),
+                  const SizedBox(height: 3),
 
-                Row(
-                  children: [
-                    StatusChip(status: status),
-                    const Spacer(),
-                    Text(
-                      pctLabel,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.muted,
-                        fontWeight: FontWeight.w500,
+                  Text(
+                    author == 'Unknown' ? 'Document' : author,
+                    style: const TextStyle(fontSize: 12, color: AppColors.muted),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // Progress bar — hidden when book has never been opened
+                  if (hasProgress) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: pct.toDouble(),
+                        minHeight: 3,
+                        backgroundColor: AppColors.cream.withValues(alpha: 0.1),
+                        valueColor: AlwaysStoppedAnimation(
+                          status == 'completed'
+                              ? AppColors.success
+                              : AppColors.amber,
+                        ),
                       ),
                     ),
-                  ],
-                ),
-              ],
+                    const SizedBox(height: 6),
+                  ] else
+                    const SizedBox(height: 4),
+
+                  Row(
+                    children: [
+                      StatusChip(status: status, progress: progress),
+                      const Spacer(),
+                      if (pctLabel != null)
+                        Text(
+                          pctLabel,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.muted,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
 
-          const SizedBox(width: 8),
+            const SizedBox(width: 8),
 
-          // ── Options menu
-          GestureDetector(
-            onTap: () => _showOptions(context),
-            child: const Icon(Icons.more_vert_rounded, color: AppColors.muted, size: 20),
-          ),
-        ],
+            // ── Options menu — stops tap propagating to card open
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _showOptions(context),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(Icons.more_vert_rounded,
+                    color: AppColors.muted, size: 20),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Color _coverColor(String title) {
-    final colors = [
-      const Color(0xFF1A3A5C),
-      const Color(0xFF2D4A22),
-      const Color(0xFF4A1A2C),
-      const Color(0xFF2A3A4A),
-      const Color(0xFF3A2A4A),
-      const Color(0xFF1A4A3A),
-      const Color(0xFF4A3A1A),
+    const colors = [
+      Color(0xFF1A3A5C),
+      Color(0xFF2D4A22),
+      Color(0xFF4A1A2C),
+      Color(0xFF2A3A4A),
+      Color(0xFF3A2A4A),
+      Color(0xFF1A4A3A),
+      Color(0xFF4A3A1A),
     ];
-    final index = title.isNotEmpty
-        ? title.codeUnitAt(0) % colors.length
-        : 0;
-    return colors[index];
+    return colors[title.isNotEmpty ? title.codeUnitAt(0) % colors.length : 0];
   }
 
   void _showOptions(BuildContext context) {
-    final book = entry['books'] as Map<String, dynamic>? ?? {};
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.midnight2,
@@ -163,27 +193,15 @@ class BookCard extends StatelessWidget {
             Container(
               width: 36, height: 4,
               decoration: BoxDecoration(
-                color: AppColors.cream.withValues(alpha:0.15),
+                color: AppColors.cream.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
             const SizedBox(height: 20),
             _optionItem(ctx, Icons.play_arrow_rounded,
-                'Continue reading', AppColors.cream, () {
+                'Open book', AppColors.cream, () {
               Navigator.pop(ctx);
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => ReaderScreen(
-                  bookTitle: Uri.decodeComponent(
-                    book['title'] ?? 'Untitled'.replaceAll('+', ' '),
-                  ),
-                  fileUrl: book['file_url'] ?? '',
-                  fileType: book['file_type'] ?? 'pdf',
-                  libraryEntryId: entry['id'],
-                  bookId: book['id'] ?? '',
-                  initialPage: entry['reading_progress'] ?? 0,
-                  totalPages: book['total_pages'] ?? 0,
-                )),
-              ).then((_) => onDeleted()); // refresh list when reader closes
+              _openBook(context);
             }),
             _optionItem(ctx, Icons.timer_outlined,
                 'Set Pacer', AppColors.cream, () {
@@ -200,7 +218,7 @@ class BookCard extends StatelessWidget {
               Navigator.pop(ctx);
               await _updateStatus(context, 'wishlist');
             }),
-            Divider(color: AppColors.cream.withValues(alpha:0.08)),
+            Divider(color: AppColors.cream.withValues(alpha: 0.08)),
             _optionItem(ctx, Icons.delete_outline_rounded,
                 'Remove from library', const Color(0xFFF09595), () async {
               Navigator.pop(ctx);
@@ -265,7 +283,9 @@ class BookCard extends StatelessWidget {
 // ── STATUS CHIP ───────────────────────────────────────────────────────────────
 class StatusChip extends StatelessWidget {
   final String status;
-  const StatusChip({super.key, required this.status});
+  final int progress;
+
+  const StatusChip({super.key, required this.status, required this.progress});
 
   @override
   Widget build(BuildContext context) {
@@ -275,19 +295,30 @@ class StatusChip extends StatelessWidget {
 
     switch (status) {
       case 'completed':
-        bgColor = AppColors.success.withValues(alpha:0.12);
+        bgColor = AppColors.success.withValues(alpha: 0.12);
         textColor = AppColors.success;
         label = 'Completed';
         break;
       case 'wishlist':
-        bgColor = AppColors.cream.withValues(alpha:0.06);
+        bgColor = AppColors.cream.withValues(alpha: 0.06);
         textColor = AppColors.muted;
         label = 'Wishlist';
         break;
+      case 'reading':
+        if (progress > 0) {
+          bgColor = AppColors.amber.withValues(alpha: 0.1);
+          textColor = AppColors.amberLight;
+          label = 'Reading';
+        } else {
+          bgColor = AppColors.cream.withValues(alpha: 0.06);
+          textColor = AppColors.muted;
+          label = 'Unread';
+        }
+        break;
       default:
-        bgColor = AppColors.amber.withValues(alpha:0.1);
-        textColor = AppColors.amberLight;
-        label = 'Reading';
+        bgColor = AppColors.cream.withValues(alpha: 0.06);
+        textColor = AppColors.muted;
+        label = 'Unread';
     }
 
     return Container(

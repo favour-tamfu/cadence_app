@@ -51,11 +51,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Timer? _tapTimer;
 
   // Selection
-  final FocusNode _pdfFocusNode = FocusNode();
-  final FocusNode _epubFocusNode = FocusNode();
-
-  // EPUB
-  EpubController? _epubController;
+  final FocusNode _selectionFocusNode = FocusNode();
 
   // Adobe content
   List<List<Map<String, dynamic>>> _adobePages = [];
@@ -86,9 +82,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   @override
   void dispose() {
-    _epubController?.dispose();
-    _pdfFocusNode.dispose();
-    _epubFocusNode.dispose();
+    _selectionFocusNode.dispose();
     _tapTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
@@ -181,9 +175,81 @@ class _ReaderScreenState extends State<ReaderScreen> {
     setState(() => _loadingMessage = 'Loading EPUB...');
     final file = await _downloadFile('epub');
     final bytes = await file.readAsBytes();
-    _epubController = EpubController(
-      document: EpubDocument.openData(bytes),
+
+    setState(() => _loadingMessage = 'Preparing content...');
+    final book = await EpubDocument.openData(bytes);
+
+    final allElements = <Map<String, dynamic>>[];
+
+    void processChapter(EpubChapter chapter, int depth) {
+      final title = chapter.Title?.trim() ?? '';
+      if (title.isNotEmpty) {
+        allElements.add({'type': depth == 0 ? 'h1' : 'h2', 'text': title});
+      }
+      final html = chapter.HtmlContent ?? '';
+      if (html.isNotEmpty) {
+        allElements.addAll(_extractTextFromHtml(html));
+      }
+      for (final sub in chapter.SubChapters ?? <EpubChapter>[]) {
+        processChapter(sub, depth + 1);
+      }
+    }
+
+    for (final chapter in book.Chapters ?? <EpubChapter>[]) {
+      processChapter(chapter, 0);
+    }
+
+    _buildAdobePages({'elements': allElements, 'meta': {}});
+  }
+
+  // ── Strip HTML and extract text elements ──────────────────────────────────
+  List<Map<String, dynamic>> _extractTextFromHtml(String html) {
+    final result = <Map<String, dynamic>>[];
+
+    String clean(String s) => s
+        .replaceAll(RegExp(r'<[^>]+>'), '')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    final blockRe = RegExp(
+      r'<(h[1-6]|p|li|blockquote)(?:\s[^>]*)?>(.+?)<\/(?:h[1-6]|p|li|blockquote)>',
+      caseSensitive: false,
+      dotAll: true,
     );
+
+    for (final m in blockRe.allMatches(html)) {
+      final tag = m.group(1)!.toLowerCase();
+      final text = clean(m.group(2)!);
+      if (text.length < 3) continue;
+
+      String type;
+      if (tag == 'h1') {
+        type = 'h1';
+      } else if (tag == 'h2') {
+        type = 'h2';
+      } else if (tag.startsWith('h')) {
+        type = 'h3';
+      } else if (tag == 'li') {
+        type = 'li';
+      } else {
+        type = 'p';
+      }
+      result.add({'type': type, 'text': text});
+    }
+
+    // Fallback: extract all text if no block elements matched
+    if (result.isEmpty) {
+      final text = clean(html);
+      if (text.length > 5) result.add({'type': 'p', 'text': text});
+    }
+
+    return result;
   }
 
   // ── Adobe PDF pipeline ────────────────────────────────────────────────────
@@ -624,9 +690,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           child: Stack(children: [
 
             // Main reading area
-            widget.fileType == 'epub'
-                ? _buildEpubReader()
-                : _buildAdobeReader(),
+            _buildAdobeReader(),
 
             // Top bar
             AnimatedSlide(
@@ -663,37 +727,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
-  // ── EPUB reader ───────────────────────────────────────────────────────────
-  Widget _buildEpubReader() {
-    if (_epubController == null) return const SizedBox();
-    return SelectableRegion(
-      focusNode: _epubFocusNode,
-      selectionControls: materialTextSelectionControls,
-      child: EpubView(
-        controller: _epubController!,
-        builders: EpubViewBuilders<DefaultBuilderOptions>(
-          options: DefaultBuilderOptions(
-            textStyle: TextStyle(
-              fontSize: _fontSize,
-              color: _textColor,
-              height: _lineHeight,
-              letterSpacing: 0.2,
-            ),
-          ),
-          chapterDividerBuilder: (_) => Divider(
-            color: _mutedColor.withOpacity(0.2),
-            height: 40,
-          ),
-        ),
-        onChapterChanged: (value) {
-          if (value == null) return;
-          setState(() => _currentPage = value.chapterNumber);
-          _saveProgress(_currentPage);
-        },
-      ),
-    );
-  }
-
   // ── Adobe page reader ─────────────────────────────────────────────────────
   Widget _buildAdobeReader() {
     if (_adobePages.isEmpty) {
@@ -706,7 +739,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
 
     return SelectableRegion(
-      focusNode: _pdfFocusNode,
+      focusNode: _selectionFocusNode,
       selectionControls: materialTextSelectionControls,
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
@@ -902,9 +935,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                widget.fileType == 'epub'
-                    ? 'Chapter $_currentPage'
-                    : 'Page ${_currentPage + 1}',
+                'Page ${_currentPage + 1}',
                 style: TextStyle(fontSize: 11, color: _mutedColor),
               ),
               Text(
@@ -916,7 +947,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 ),
               ),
               Text(
-                '$_totalPages ${widget.fileType == 'epub' ? 'chapters' : 'pages'}',
+                '$_totalPages pages',
                 style: TextStyle(fontSize: 11, color: _mutedColor),
               ),
             ],

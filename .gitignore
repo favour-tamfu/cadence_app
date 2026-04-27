@@ -90,3 +90,6 @@ windows/flutter/ephemeral/
 # Supabase / Env
 .env*
 !.env.example
+
+.claude
+CLAUDE.md
