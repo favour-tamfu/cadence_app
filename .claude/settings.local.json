@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(flutter analyze *)",
-      "Bash(dart fix *)"
+      "Bash(dart fix *)",
+      "Bash(powershell -Command \"\\(Get-Content 'lib\\\\screens\\\\reader\\\\reader_screen.dart'\\) -replace '\\\\.withOpacity\\\\\\(', '.withValues\\(alpha: ' | Set-Content 'lib\\\\screens\\\\reader\\\\reader_screen.dart' -Encoding utf8\")",
+      "Bash(py --version)",
+      "Bash(New-Item -ItemType Directory -Force -Path \"C:\\\\Users\\\\favou\\\\Desktop\\\\cadence_app\\\\lib\\\\screens\\\\companion\")",
+      "Bash(Out-Null)",
+      "PowerShell(New-Item *)",
+      "PowerShell(flutter analyze *)",
+      "Bash(New-Item -Path \"C:\\\\Users\\\\favou\\\\Desktop\\\\cadence_app\\\\lib\\\\widgets\\\\companion_panel.dart\" -ItemType File -Force)",
+      "Bash(Write-Output \"created\")"
     ]
   }
 }

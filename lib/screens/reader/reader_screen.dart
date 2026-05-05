@@ -1,13 +1,61 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:io';
 import 'package:epub_view/epub_view.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/app_colors.dart';
+import 'package:provider/provider.dart';
+import '../../services/companion_session_manager.dart';
+import '../../widgets/first_open_sheet.dart';
+import '../../widgets/companion_panel.dart';
 
 enum ReadingTheme { dark, sepia, light }
+
+// Converts HTML character references and named entities to plain Unicode so
+// extracted PDF/EPUB text never shows garbage like &ldquo; or &mdash;.
+String _decodeHtmlEntities(String s) {
+  return s
+    // Typographic quotes & dashes -- the main culprits from PDF extraction
+    .replaceAll('&ldquo;',  '\u201C') // left double quote
+    .replaceAll('&rdquo;',  '\u201D') // right double quote
+    .replaceAll('&lsquo;',  '\u2018') // left single quote
+    .replaceAll('&rsquo;',  '\u2019') // right single quote / apostrophe
+    .replaceAll('&mdash;',  '\u2014') // em dash
+    .replaceAll('&ndash;',  '\u2013') // en dash
+    .replaceAll('&hellip;', '\u2026') // horizontal ellipsis
+    .replaceAll('&laquo;',  '\u00AB') // left angle quote
+    .replaceAll('&raquo;',  '\u00BB') // right angle quote
+    // Common inline entities
+    .replaceAll('&bull;',   '\u2022') // bullet
+    .replaceAll('&middot;', '\u00B7') // middle dot
+    .replaceAll('&copy;',   '\u00A9') // copyright
+    .replaceAll('&reg;',    '\u00AE') // registered
+    .replaceAll('&trade;',  '\u2122') // trademark
+    .replaceAll('&apos;',   "'")
+    .replaceAll('&nbsp;',   ' ') // non-breaking space -> regular space
+    .replaceAll('&shy;',    '')   // soft hyphen -- drop silently
+    // Numeric decimal references: &#NNN;
+    .replaceAllMapped(RegExp(r'&#(\d+);'), (m) {
+      final code = int.tryParse(m.group(1)!);
+      return code != null ? String.fromCharCode(code) : m.group(0)!;
+    })
+    // Numeric hex references: &#xHHH;
+    .replaceAllMapped(RegExp(r'&#x([0-9a-fA-F]+);', caseSensitive: false), (m) {
+      final code = int.tryParse(m.group(1)!, radix: 16);
+      return code != null ? String.fromCharCode(code) : m.group(0)!;
+    })
+    // Basic XML/HTML escapes -- do these last so we do not double-decode
+    .replaceAll('&quot;',   '"')
+    .replaceAll("&#39;",    "'")
+    .replaceAll('&lt;',     '<')
+    .replaceAll('&gt;',     '>')
+    .replaceAll('&amp;',    '&');
+}
+
 
 class ReaderScreen extends StatefulWidget {
   final String bookTitle;
@@ -44,14 +92,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   // UI
   bool _barsVisible = true;
+  bool _companionVisible = false;
+  String _selectedText = '';
+  int _lastNudgePage = -10;
 
   // Tap detection (Listener-based, bypasses gesture arena)
   DateTime? _tapDownTime;
   Offset? _tapDownPosition;
   Timer? _tapTimer;
-
-  // Selection
-  final FocusNode _selectionFocusNode = FocusNode();
 
   // Adobe content
   List<List<Map<String, dynamic>>> _adobePages = [];
@@ -61,6 +109,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   int _currentPage = 0;
   int _totalPages = 0;
   int _lastSavedPage = 0;
+  double _restoreScrollOffset = 0; // exact pixel offset saved on exit
 
   // Reading settings
   ReadingTheme _theme = ReadingTheme.dark;
@@ -73,6 +122,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _currentPage = widget.initialPage;
     _totalPages = widget.totalPages;
     _loadBook();
+    _saveLastOpened();
 
     // Show bars for 3s then hide
     Future.delayed(const Duration(seconds: 3), () {
@@ -80,15 +130,19 @@ class _ReaderScreenState extends State<ReaderScreen> {
     });
   }
 
+  Future<void> _saveLastOpened() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('last_read_entry', widget.libraryEntryId);
+  }
+
   @override
   void dispose() {
-    _selectionFocusNode.dispose();
     _tapTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
 
-  // ── Theme helpers ─────────────────────────────────────────────────────────
+  // â”€â”€ Theme helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Color get _bgColor {
     switch (_theme) {
       case ReadingTheme.sepia: return const Color(0xFFF8F0E3);
@@ -115,18 +169,24 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   Color get _overlayColor {
     switch (_theme) {
-      case ReadingTheme.sepia: return const Color(0xFFF8F0E3).withOpacity(0.97);
-      case ReadingTheme.light: return Colors.white.withOpacity(0.97);
-      case ReadingTheme.dark:  return const Color(0xFF111827).withOpacity(0.97);
+      case ReadingTheme.sepia: return const Color(0xFFF8F0E3).withValues(alpha: 0.97);
+      case ReadingTheme.light: return Colors.white.withValues(alpha: 0.97);
+      case ReadingTheme.dark:  return const Color(0xFF111827).withValues(alpha: 0.97);
     }
   }
 
-  // ── Load book ─────────────────────────────────────────────────────────────
+  // â”€â”€ Load book â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<void> _loadBook() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
+
+    // Load saved scroll offset while book processes in the background.
+    // The key is per library entry so each user-book pair has its own offset.
+    final prefs = await SharedPreferences.getInstance();
+    _restoreScrollOffset =
+        prefs.getDouble('scroll_${widget.libraryEntryId}') ?? 0;
 
     try {
       if (widget.fileType == 'epub') {
@@ -135,6 +195,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
         await _loadPdfViaAdobe();
       }
       setState(() => _isLoading = false);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _restorePosition());
+      _openCompanionSession();
     } catch (e) {
       setState(() {
         _errorMessage = 'Could not load book.\n\n${e.toString()}';
@@ -143,7 +205,25 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
   }
 
-  // ── Download file to local storage ────────────────────────────────────────
+  // Jumps to the saved pixel offset, falling back to a page-proportion
+  // estimate on first open (before any offset has been stored locally).
+  void _restorePosition() {
+    if (!mounted || !_scrollController.hasClients) return;
+    final max = _scrollController.position.maxScrollExtent;
+    if (max <= 0) return;
+
+    final double target;
+    if (_restoreScrollOffset > 0) {
+      target = _restoreScrollOffset.clamp(0, max);
+    } else if (widget.initialPage > 0 && _totalPages > 1) {
+      target = (widget.initialPage / (_totalPages - 1)) * max;
+    } else {
+      return;
+    }
+    _scrollController.jumpTo(target);
+  }
+
+  // â”€â”€ Download file to local storage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<File> _downloadFile(String ext) async {
     final dir = await getTemporaryDirectory();
     final file = File('${dir.path}/${widget.libraryEntryId}.$ext');
@@ -170,7 +250,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     return file;
   }
 
-  // ── Load EPUB ─────────────────────────────────────────────────────────────
+  // â”€â”€ Load EPUB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<void> _loadEpub() async {
     setState(() => _loadingMessage = 'Loading EPUB...');
     final file = await _downloadFile('epub');
@@ -202,18 +282,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _buildAdobePages({'elements': allElements, 'meta': {}});
   }
 
-  // ── Strip HTML and extract text elements ──────────────────────────────────
+  // â”€â”€ Strip HTML and extract text elements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   List<Map<String, dynamic>> _extractTextFromHtml(String html) {
     final result = <Map<String, dynamic>>[];
 
-    String clean(String s) => s
-        .replaceAll(RegExp(r'<[^>]+>'), '')
-        .replaceAll('&nbsp;', ' ')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
+    String clean(String s) => _decodeHtmlEntities(
+            s.replaceAll(RegExp(r'<[^>]+>'), ''))
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
 
@@ -252,7 +326,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     return result;
   }
 
-  // ── Adobe PDF pipeline ────────────────────────────────────────────────────
+  // â”€â”€ Adobe PDF pipeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<void> _loadPdfViaAdobe() async {
     setState(() => _loadingMessage = 'Starting extraction...');
 
@@ -278,7 +352,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _buildAdobePages(content);
   }
 
-  // ── Start extraction job via Edge Function ────────────────────────────────
+  // â”€â”€ Start extraction job via Edge Function â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<String?> _startExtractionJob() async {
     try {
       final hash = widget.fileUrl.hashCode.toString();
@@ -306,9 +380,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
   }
 
-  // ── Poll extract-status every 3 seconds ───────────────────────────────────
+  // â”€â”€ Poll extract-status every 3 seconds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<Map<String, dynamic>?> _pollUntilDone(String jobId) async {
-    const maxAttempts = 40; // 40 × 3s = 2 minutes
+    const maxAttempts = 40; // 40 Ã— 3s = 2 minutes
     int attempts = 0;
 
     while (attempts < maxAttempts) {
@@ -326,7 +400,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
         final data = response.data as Map<String, dynamic>;
         final status = data['status'] as String? ?? 'processing';
 
-        debugPrint('Poll $attempts — status: $status');
+        debugPrint('Poll $attempts â€” status: $status');
 
         if (status == 'done') {
           return data['content'] as Map<String, dynamic>?;
@@ -352,7 +426,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     return null; // Timed out
   }
 
-  // ── Build page list from Adobe content ────────────────────────────────────
+  // â”€â”€ Build page list from Adobe content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _buildAdobePages(Map<String, dynamic> content) {
     final elements = content['elements'] as List<dynamic>? ?? [];
 
@@ -362,6 +436,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
     for (final el in elements) {
       final map = Map<String, dynamic>.from(el as Map);
+      // Sanitise entities before any text reaches the UI
+      if (map['text'] is String) {
+        map['text'] = _decodeHtmlEntities(map['text'] as String);
+      }
       final type = map['type'] as String? ?? 'p';
       final text = map['text'] as String? ?? '';
 
@@ -390,21 +468,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
       _totalPages = pages.length;
     });
 
-    // Restore saved position
-    if (widget.initialPage > 0 && widget.initialPage < pages.length) {
-      _currentPage = widget.initialPage;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollController.hasClients &&
-            _scrollController.position.maxScrollExtent > 0 &&
-            pages.length > 1) {
-          final offset = (widget.initialPage / (pages.length - 1)) *
-              _scrollController.position.maxScrollExtent;
-          _scrollController.jumpTo(
-              offset.clamp(0.0, _scrollController.position.maxScrollExtent));
-        }
-      });
-    }
-
     // Save total pages to Supabase
     if (widget.bookId.isNotEmpty && pages.isNotEmpty) {
       _supabase.from('books')
@@ -413,23 +476,88 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
   }
 
-  // ── Save progress ─────────────────────────────────────────────────────────
+  // â”€â”€ Save progress â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<void> _saveProgress(int page) async {
-    if ((page - _lastSavedPage).abs() < 3 &&
-        page != _totalPages - 1) return;
+    if (page == _lastSavedPage) return;
     try {
       await _supabase.from('user_library').update({
         'reading_progress': page,
         if (page >= _totalPages - 1 && _totalPages > 0)
           'status': 'completed',
       }).eq('id', widget.libraryEntryId);
+
+      // Update streak on first page save of the session
+      if (_lastSavedPage == widget.initialPage) {
+        _updateStreak(); // fire and forget — don't await
+      }
+
       _lastSavedPage = page;
     } catch (e) {
       debugPrint('Save progress error: $e');
     }
   }
 
+  // ── Update streak in profiles table ──────────────────────────────────────────
+  // Requires a `last_read_date date` column on the profiles table in Supabase.
+  Future<void> _updateStreak() async {
+    try {
+      final userId = _supabase.auth.currentUser!.id;
+      final today = DateTime.now();
+      final todayDate = DateTime(today.year, today.month, today.day);
+
+      final profile = await _supabase
+          .from('profiles')
+          .select('streak, last_read_date')
+          .eq('id', userId)
+          .maybeSingle();
+
+      if (profile == null) return;
+
+      final lastReadStr = profile['last_read_date'] as String?;
+      final currentStreak = profile['streak'] as int? ?? 0;
+
+      int newStreak = currentStreak;
+
+      if (lastReadStr == null) {
+        // First time reading
+        newStreak = 1;
+      } else {
+        final lastRead = DateTime.parse(lastReadStr);
+        final lastReadDate = DateTime(
+          lastRead.year, lastRead.month, lastRead.day,
+        );
+        final diff = todayDate.difference(lastReadDate).inDays;
+
+        if (diff == 0) {
+          // Already read today — no change
+          return;
+        } else if (diff == 1) {
+          // Consecutive day — increment
+          newStreak = currentStreak + 1;
+        } else {
+          // Missed a day — reset
+          newStreak = 1;
+        }
+      }
+
+      await _supabase.from('profiles').update({
+        'streak': newStreak,
+        'last_read_date': todayDate.toIso8601String(),
+      }).eq('id', userId);
+
+    } catch (e) {
+      debugPrint('Streak update error: $e');
+    }
+  }
+
   Future<void> _saveAndPop() async {
+    // Persist exact scroll offset so we can restore the precise position.
+    if (_scrollController.hasClients) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(
+          'scroll_${widget.libraryEntryId}', _scrollController.offset);
+    }
+
     try {
       await _supabase.from('user_library').update({
         'reading_progress': _currentPage,
@@ -448,7 +576,46 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (mounted) Navigator.of(context).pop();
   }
 
-  // ── Settings sheet ────────────────────────────────────────────────────────
+  // â”€â”€ Companion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  String _extractFullText() {
+    final buf = StringBuffer();
+    for (final page in _adobePages) {
+      for (final el in page) {
+        final text = el['text'] as String? ?? '';
+        if (text.isNotEmpty) buf.writeln(text);
+      }
+    }
+    return buf.toString();
+  }
+
+  Future<void> _openCompanionSession() async {
+    if (!mounted) return;
+    final manager = context.read<CompanionSessionManager>();
+    await manager.openSession(
+      bookId: widget.bookId,
+      title: widget.bookTitle,
+      fullBookText: _extractFullText(),
+    );
+    if (!mounted) return;
+    await FirstOpenSheet.showIfNeeded(context);
+  }
+
+  void _openCompanion({String selectedText = ''}) {
+    setState(() {
+      _selectedText = selectedText;
+      _companionVisible = true;
+    });
+  }
+
+  void _triggerNudge() {
+    final manager = context.read<CompanionSessionManager>();
+    if (manager.session == null || manager.isThinking || _companionVisible) return;
+    if (!manager.session!.companionConfig.proactiveNudges) return;
+    _openCompanion();
+  }
+
+  // â”€â”€ Settings sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _showSettings() {
     showModalBottomSheet(
       context: context,
@@ -469,7 +636,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
               Center(child: Container(
                 width: 36, height: 4,
                 decoration: BoxDecoration(
-                  color: _mutedColor.withOpacity(0.3),
+                  color: _mutedColor.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(2),
                 ),
               )),
@@ -513,7 +680,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 Expanded(child: SliderTheme(
                   data: SliderThemeData(
                     activeTrackColor: AppColors.amber,
-                    inactiveTrackColor: _mutedColor.withOpacity(0.2),
+                    inactiveTrackColor: _mutedColor.withValues(alpha: 0.2),
                     thumbColor: AppColors.amber,
                     trackHeight: 3,
                     overlayShape: SliderComponentShape.noOverlay,
@@ -543,7 +710,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 Expanded(child: SliderTheme(
                   data: SliderThemeData(
                     activeTrackColor: AppColors.amber,
-                    inactiveTrackColor: _mutedColor.withOpacity(0.2),
+                    inactiveTrackColor: _mutedColor.withValues(alpha: 0.2),
                     thumbColor: AppColors.amber,
                     trackHeight: 3,
                     overlayShape: SliderComponentShape.noOverlay,
@@ -573,7 +740,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   Expanded(child: SliderTheme(
                     data: SliderThemeData(
                       activeTrackColor: AppColors.amber,
-                      inactiveTrackColor: _mutedColor.withOpacity(0.2),
+                      inactiveTrackColor: _mutedColor.withValues(alpha: 0.2),
                       thumbColor: AppColors.amber,
                       trackHeight: 3,
                       overlayShape: SliderComponentShape.noOverlay,
@@ -641,7 +808,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
               const SizedBox(height: 2),
               Text(label, style: TextStyle(
                 fontSize: 10,
-                color: text.withOpacity(0.6),
+                color: text.withValues(alpha: 0.6),
                 fontWeight: FontWeight.w500,
               )),
             ],
@@ -651,12 +818,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
+  // â”€â”€ Build â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   @override
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvoked: (didPop) {
+      onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _saveAndPop();
       },
       child: Scaffold(
@@ -681,7 +848,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
             _tapDownTime = null;
             _tapDownPosition = null;
             if (ms < 200 && dist < 20) {
-              // Start timer — cancelled by a second pointerDown (double-tap)
+              // Start timer â€” cancelled by a second pointerDown (double-tap)
               _tapTimer = Timer(const Duration(milliseconds: 250), () {
                 if (mounted) setState(() => _barsVisible = !_barsVisible);
               });
@@ -692,34 +859,84 @@ class _ReaderScreenState extends State<ReaderScreen> {
             // Main reading area
             _buildAdobeReader(),
 
-            // Top bar
-            AnimatedSlide(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeInOut,
-              offset: _barsVisible
-                  ? Offset.zero : const Offset(0, -1),
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 250),
-                opacity: _barsVisible ? 1 : 0,
-                child: _buildTopBar(context),
+            // Companion panel overlay
+            if (_companionVisible)
+              Positioned.fill(
+                child: CompanionPanel(
+                  selectedText: _selectedText,
+                  onClose: () => setState(() {
+                    _companionVisible = false;
+                    _selectedText = '';
+                  }),
+                ),
               ),
-            ),
 
-            // Bottom bar
-            Positioned(
-              bottom: 0, left: 0, right: 0,
-              child: AnimatedSlide(
+            // Top bar
+            if (!_companionVisible)
+              AnimatedSlide(
                 duration: const Duration(milliseconds: 250),
                 curve: Curves.easeInOut,
                 offset: _barsVisible
-                    ? Offset.zero : const Offset(0, 1),
+                    ? Offset.zero : const Offset(0, -1),
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 250),
                   opacity: _barsVisible ? 1 : 0,
-                  child: _buildBottomBar(),
+                  child: _buildTopBar(context),
                 ),
               ),
-            ),
+
+            // Bottom bar
+            if (!_companionVisible)
+              Positioned(
+                bottom: 0, left: 0, right: 0,
+                child: AnimatedSlide(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeInOut,
+                  offset: _barsVisible
+                      ? Offset.zero : const Offset(0, 1),
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 250),
+                    opacity: _barsVisible ? 1 : 0,
+                    child: _buildBottomBar(),
+                  ),
+                ),
+              ),
+
+            // ✦ Companion trigger button (visible during reading)
+            if (!_companionVisible)
+              Positioned(
+                right: 16,
+                bottom: MediaQuery.of(context).padding.bottom + 72,
+                child: GestureDetector(
+                  onTap: () => _openCompanion(),
+                  child: Container(
+                    width: 44, height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.midnight2,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: AppColors.amber.withValues(alpha: 0.6),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Center(
+                      child: Text(
+                        '✦',
+                        style: TextStyle(
+                          color: AppColors.amber,
+                          fontSize: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
 
           ]),
         ),
@@ -727,7 +944,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
-  // ── Adobe page reader ─────────────────────────────────────────────────────
+  // â”€â”€ Adobe page reader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Widget _buildAdobeReader() {
     if (_adobePages.isEmpty) {
       return Center(
@@ -738,9 +955,33 @@ class _ReaderScreenState extends State<ReaderScreen> {
       );
     }
 
-    return SelectableRegion(
-      focusNode: _selectionFocusNode,
-      selectionControls: materialTextSelectionControls,
+    return SelectionArea(
+      contextMenuBuilder: (ctx, state) =>
+          AdaptiveTextSelectionToolbar.buttonItems(
+        anchors: state.contextMenuAnchors,
+        buttonItems: [
+          ...state.contextMenuButtonItems,
+          ContextMenuButtonItem(
+            label: 'Ask Companion',
+            onPressed: () {
+              // Trigger native copy, then read clipboard to get selected text
+              final copyItem = state.contextMenuButtonItems.firstWhere(
+                (item) => item.type == ContextMenuButtonType.copy,
+                orElse: () =>
+                    ContextMenuButtonItem(onPressed: () {}, label: ''),
+              );
+              copyItem.onPressed?.call();
+              ContextMenuController.removeAny();
+              Future.delayed(const Duration(milliseconds: 50), () async {
+                if (!mounted) return;
+                final data = await Clipboard.getData(Clipboard.kTextPlain);
+                final text = data?.text?.trim() ?? '';
+                if (text.isNotEmpty) _openCompanion(selectedText: text);
+              });
+            },
+          ),
+        ],
+      ),
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
           if (notification is ScrollUpdateNotification &&
@@ -753,6 +994,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
             if (page != _currentPage) {
               setState(() => _currentPage = page);
               _saveProgress(page);
+              if (page - _lastNudgePage >= 10) {
+                _lastNudgePage = page;
+                _triggerNudge();
+              }
             }
           }
           return false;
@@ -819,7 +1064,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('• ', style: TextStyle(
+                        Text('â€¢ ', style: TextStyle(
                           color: AppColors.amberLight,
                           fontSize: _fontSize,
                         )),
@@ -849,7 +1094,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
         if (index < _adobePages.length - 1)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 28),
-            child: Divider(color: _mutedColor.withOpacity(0.12), height: 1),
+            child: Divider(color: _mutedColor.withValues(alpha: 0.12), height: 1),
           ),
         if (index == _adobePages.length - 1)
           const SizedBox(height: 100),
@@ -857,7 +1102,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
-  // ── Top bar ───────────────────────────────────────────────────────────────
+  // â”€â”€ Top bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Widget _buildTopBar(BuildContext context) {
     return Container(
       color: _overlayColor,
@@ -870,7 +1115,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           child: Container(
             width: 36, height: 36,
             decoration: BoxDecoration(
-              color: _textColor.withOpacity(0.08),
+              color: _textColor.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(Icons.arrow_back_ios_new_rounded,
@@ -896,7 +1141,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           child: Container(
             width: 36, height: 36,
             decoration: BoxDecoration(
-              color: _textColor.withOpacity(0.08),
+              color: _textColor.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(Icons.tune_rounded, color: _textColor, size: 18),
@@ -906,7 +1151,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
-  // ── Bottom bar ────────────────────────────────────────────────────────────
+  // â”€â”€ Bottom bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Widget _buildBottomBar() {
     final progress = _totalPages > 0
         ? (_currentPage + 1) / _totalPages
@@ -926,7 +1171,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
             child: LinearProgressIndicator(
               value: progress.clamp(0.0, 1.0),
               minHeight: 3,
-              backgroundColor: _mutedColor.withOpacity(0.2),
+              backgroundColor: _mutedColor.withValues(alpha: 0.2),
               valueColor: const AlwaysStoppedAnimation(AppColors.amber),
             ),
           ),
@@ -957,7 +1202,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
-  // ── Loading state ─────────────────────────────────────────────────────────
+  // â”€â”€ Loading state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Widget _buildLoading() {
     return Scaffold(
       backgroundColor: _bgColor,
@@ -983,7 +1228,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   child: LinearProgressIndicator(
                     value: _extractionProgress / 100,
                     minHeight: 3,
-                    backgroundColor: _mutedColor.withOpacity(0.2),
+                    backgroundColor: _mutedColor.withValues(alpha: 0.2),
                     valueColor:
                     const AlwaysStoppedAnimation(AppColors.amber),
                   ),
@@ -991,7 +1236,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 const SizedBox(height: 8),
                 Text(
                   '$_extractionProgress%',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.amberLight,
                     fontWeight: FontWeight.w500,
@@ -1005,7 +1250,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
-  // ── Error state ───────────────────────────────────────────────────────────
+  // â”€â”€ Error state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Widget _buildError() {
     return Scaffold(
       backgroundColor: _bgColor,
@@ -1016,7 +1261,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.error_outline_rounded,
-                  size: 48, color: _mutedColor.withOpacity(0.5)),
+                  size: 48, color: _mutedColor.withValues(alpha: 0.5)),
               const SizedBox(height: 20),
               Text(
                 _errorMessage!,

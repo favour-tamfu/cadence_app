@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/theme/app_colors.dart';
 import '../screens/reader/reader_screen.dart';
+import 'set_pacer_sheet.dart';
+import '../../core/utils/pacer_calculator.dart';
+
 
 // ── BOOK CARD ─────────────────────────────────────────────────────────────────
 class BookCard extends StatelessWidget {
@@ -48,6 +51,7 @@ class BookCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () => _openBook(context),
+      onLongPress: () => _showOptions(context),
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
@@ -131,6 +135,16 @@ class BookCard extends StatelessWidget {
                   Row(
                     children: [
                       StatusChip(status: status, progress: progress),
+                      const SizedBox(width: 6),
+                      if (entry['pacer_target_date'] != null &&
+                          entry['daily_page_goal'] != null &&
+                          (entry['daily_page_goal'] as int? ?? 0) > 0)
+                        _PacerChip(
+                          dailyGoal: entry['daily_page_goal'] as int,
+                          targetDate: DateTime.parse(
+                            entry['pacer_target_date'] as String,
+                          ),
+                        ),
                       const Spacer(),
                       if (pctLabel != null)
                         Text(
@@ -149,7 +163,6 @@ class BookCard extends StatelessWidget {
 
             const SizedBox(width: 8),
 
-            // ── Options menu — stops tap propagating to card open
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () => _showOptions(context),
@@ -179,6 +192,7 @@ class BookCard extends StatelessWidget {
   }
 
   void _showOptions(BuildContext context) {
+    final book = entry['books'] as Map<String, dynamic>? ?? {};
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.midnight2,
@@ -203,11 +217,32 @@ class BookCard extends StatelessWidget {
               Navigator.pop(ctx);
               _openBook(context);
             }),
-            _optionItem(ctx, Icons.timer_outlined,
-                'Set Pacer', AppColors.cream, () {
+            _optionItem(
+                ctx,
+                Icons.timer_outlined,
+                entry['pacer_target_date'] != null &&
+                        (entry['daily_page_goal'] as int? ?? 0) > 0
+                    ? 'Change Pacer'
+                    : 'Set Pacer',
+                AppColors.cream, () {
               Navigator.pop(ctx);
-              // TODO: set pacer (Sprint 4)
+              final totalPages = book['total_pages'] as int? ?? 0;
+              final progress = entry['reading_progress'] as int? ?? 0;
+
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: Colors.transparent,
+                isScrollControlled: true,
+                builder: (_) => SetPacerSheet(
+                  libraryEntryId: entry['id'],
+                  currentPage: progress,
+                  totalPages: totalPages,
+                  bookTitle: book['title'] ?? 'Untitled',
+                  onSaved: onDeleted, // refreshes the library list
+                ),
+              );
             }),
+
             _optionItem(ctx, Icons.check_circle_outline_rounded,
                 'Mark as completed', AppColors.success, () async {
               Navigator.pop(ctx);
@@ -334,6 +369,44 @@ class StatusChip extends StatelessWidget {
           fontWeight: FontWeight.w500,
           color: textColor,
         ),
+      ),
+    );
+  }
+}
+
+class _PacerChip extends StatelessWidget {
+  final int dailyGoal;
+  final DateTime targetDate;
+  const _PacerChip({required this.dailyGoal, required this.targetDate});
+
+  @override
+  Widget build(BuildContext context) {
+    final daysLeft = PacerCalculator.daysRemaining(targetDate);
+    final label = daysLeft == 0
+        ? 'Finish today!'
+        : '$dailyGoal pages/day';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.amber.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.timer_outlined,
+              size: 10, color: AppColors.amberLight),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w500,
+              color: AppColors.amberLight,
+            ),
+          ),
+        ],
       ),
     );
   }

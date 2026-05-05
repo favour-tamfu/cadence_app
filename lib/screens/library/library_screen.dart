@@ -93,7 +93,8 @@ class LibraryScreenState extends State<LibraryScreen> {
     try {
       final userId = _supabase.auth.currentUser!.id;
       final fileId = const Uuid().v4();
-      final fileName = '$fileId.pdf';
+      final ext = file.extension?.toLowerCase() ?? 'pdf';
+      final fileName = '$fileId.$ext';
       final filePath = 'users/$userId/books/$fileName';
 
       await _supabase.storage

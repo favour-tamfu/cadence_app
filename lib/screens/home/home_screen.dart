@@ -6,6 +6,9 @@ import '../library/library_screen.dart';
 import '../reader/reader_screen.dart';
 import '../auth/login_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/utils/pacer_calculator.dart';
+import '../dashboard/dashboard_screen.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,25 +19,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
-  final _homeKey    = GlobalKey<_HomeContentState>();
+  int _homeRefreshKey = 0;
   final _libraryKey = GlobalKey<LibraryScreenState>();
-  late final List<Widget> _screens;
-
-  @override
-  void initState() {
-    super.initState();
-    _screens = [
-      _HomeContent(key: _homeKey),
-      LibraryScreen(key: _libraryKey),
-      const _DiscoverPlaceholder(),
-      const _ProfilePlaceholder(),
-    ];
-  }
 
   void _onTabTap(int i) {
-    // Silently reload the active screen's data on every tab switch so
-    // Continue Reading, Up Next, and Library are always fresh.
-    if (i == 0) _homeKey.currentState?.refresh();
+    if (i == 0) setState(() => _homeRefreshKey++);
     if (i == 1) _libraryKey.currentState?.refresh();
     setState(() => _currentIndex = i);
   }
@@ -47,7 +36,12 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: AppColors.midnight,
         body: IndexedStack(
           index: _currentIndex,
-          children: _screens,
+          children: [
+            _HomeContent(key: ValueKey(_homeRefreshKey)),
+            LibraryScreen(key: _libraryKey),
+            const _DiscoverPlaceholder(),
+            const _ProfilePlaceholder(),
+          ],
         ),
         bottomNavigationBar: _BottomNav(
           currentIndex: _currentIndex,
@@ -129,10 +123,7 @@ class _HomeContent extends StatefulWidget {
 }
 
 class _HomeContentState extends State<_HomeContent> {
-  int _refreshCount = 0;
-
-  /// Called by HomeScreen whenever the user taps the Home tab.
-  void refresh() => setState(() => _refreshCount++);
+  final _pacerKey = GlobalKey<_PacerCardState>();
 
   String _getFirstName() {
     final user = Supabase.instance.client.auth.currentUser;
@@ -233,7 +224,9 @@ class _HomeContentState extends State<_HomeContent> {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: _ContinueReadingCard(refreshCount: _refreshCount),
+              child: _ContinueReadingCard(
+                onReaderClosed: () => _pacerKey.currentState?.reload(),
+              ),
             ),
           ),
 
@@ -243,7 +236,11 @@ class _HomeContentState extends State<_HomeContent> {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: _StreakHero(),
+              child: _StreakHero(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const DashboardScreen()),
+                ),
+              ),
             ),
           ),
 
@@ -253,7 +250,7 @@ class _HomeContentState extends State<_HomeContent> {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: _PacerCard(),
+              child: _PacerCard(key: _pacerKey),
             ),
           ),
 
@@ -302,9 +299,14 @@ class _HomeContentState extends State<_HomeContent> {
 
 // ── STREAK HERO ───────────────────────────────────────────────────────────────
 class _StreakHero extends StatelessWidget {
+  final VoidCallback? onTap;
+  const _StreakHero({this.onTap});
+
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
         color: AppColors.cream.withValues(alpha:0.04),
@@ -359,24 +361,184 @@ class _StreakHero extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ));
   }
 }
 
 // ── PACER CARD ────────────────────────────────────────────────────────────────
-class _PacerCard extends StatelessWidget {
+class _PacerCard extends StatefulWidget {
+  const _PacerCard({super.key});
+
+  @override
+  State<_PacerCard> createState() => _PacerCardState();
+}
+
+class _PacerCardState extends State<_PacerCard> {
+  final _supabase = Supabase.instance.client;
+  Map<String, dynamic>? _activeEntry;
+  bool _isLoading = true;
+  int _pagesReadToday = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadActivePacer();
+  }
+
+  void reload() => _loadActivePacer();
+
+  Future<void> _loadActivePacer() async {
+    try {
+      final userId = _supabase.auth.currentUser!.id;
+
+      // Find the book with an active Pacer — has a target date set
+      final response = await _supabase
+          .from('user_library')
+          .select('*, books(*)')
+          .eq('user_id', userId)
+          .eq('status', 'reading')
+          .not('pacer_target_date', 'is', null)
+          .order('started_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (response != null) {
+        final entryId = response['id'] as String;
+        final progress = response['reading_progress'] as int? ?? 0;
+        await _loadDailyProgress(entryId, progress);
+      }
+
+      setState(() {
+        _activeEntry = response;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // Tracks how many pages the user has read today by storing a per-day
+  // baseline in SharedPreferences. Resets automatically at midnight.
+  Future<void> _loadDailyProgress(String entryId, int currentProgress) async {
+    final prefs = await SharedPreferences.getInstance();
+    final today = DateTime.now();
+    final todayStr =
+        '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+    final storedDate = prefs.getString('pacer_date_$entryId');
+
+    if (storedDate != todayStr) {
+      // New day — set today's baseline to where the user is right now
+      await prefs.setString('pacer_date_$entryId', todayStr);
+      await prefs.setInt('pacer_start_$entryId', currentProgress);
+      _pagesReadToday = 0;
+    } else {
+      final startPage = prefs.getInt('pacer_start_$entryId') ?? currentProgress;
+      _pagesReadToday = (currentProgress - startPage).clamp(0, currentProgress);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Container(
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          color: AppColors.amber.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.amber.withValues(alpha: 0.15)),
+        ),
+        child: const SizedBox(
+          height: 80,
+          child: Center(
+            child: CircularProgressIndicator(
+              color: AppColors.amber, strokeWidth: 2,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // No active Pacer — show empty state
+    if (_activeEntry == null) {
+      return Container(
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          color: AppColors.amber.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.amber.withValues(alpha: 0.2)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "TODAY'S PACER GOAL",
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                color: AppColors.amber,
+                letterSpacing: 1.8,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.timer_outlined,
+                    color: AppColors.amberLight, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'No Pacer set yet — go to Library, long press a book, and tap "Set Pacer".',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.cream.withValues(alpha: 0.65),
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Active Pacer — show real data
+    final book = _activeEntry!['books'] as Map<String, dynamic>? ?? {};
+    final title = book['title'] as String? ?? 'Untitled';
+    final totalPages = book['total_pages'] as int? ?? 0;
+    final progress = _activeEntry!['reading_progress'] as int? ?? 0;
+    final targetDateStr = _activeEntry!['pacer_target_date'] as String?;
+    final targetDate = targetDateStr != null
+        ? DateTime.parse(targetDateStr)
+        : DateTime.now().add(const Duration(days: 7));
+
+    // Recalculate live goal in case they missed days
+    final liveGoal = PacerCalculator.dailyGoal(
+      totalPages: totalPages,
+      currentPage: progress,
+      targetDate: targetDate,
+    );
+    // Pages still needed today = daily goal minus what's already been read today
+    final remaining = (liveGoal - _pagesReadToday).clamp(0, liveGoal);
+
+    final daysLeft = PacerCalculator.daysRemaining(targetDate);
+    final pct = PacerCalculator.progressPercent(
+      totalPages: totalPages,
+      currentPage: progress,
+    );
+
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: AppColors.amber.withValues(alpha:0.1),
+        color: AppColors.amber.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.amber.withValues(alpha:0.28)),
+        border: Border.all(color: AppColors.amber.withValues(alpha: 0.28)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+
+          // Eyebrow
           const Text(
             "TODAY'S PACER GOAL",
             style: TextStyle(
@@ -386,43 +548,92 @@ class _PacerCard extends StatelessWidget {
               letterSpacing: 1.8,
             ),
           ),
+
           const SizedBox(height: 10),
+
+          // Pages remaining today
           Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Icon(Icons.timer_outlined,
-                  color: AppColors.amberLight, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
+              Text(
+                '$remaining',
+                style: const TextStyle(
+                  fontFamily: 'PlayfairDisplay',
+                  fontSize: 52,
+                  color: AppColors.cream,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
-                  'No Pacer set yet — add a book to your library and set a finish date.',
+                  remaining == 0 ? 'goal met today!' : 'pages left today',
                   style: TextStyle(
-                    fontSize: 14,
-                    color: AppColors.cream.withValues(alpha:0.65),
-                    height: 1.5,
+                    fontSize: 16,
+                    color: remaining == 0
+                        ? AppColors.amberLight
+                        : AppColors.cream.withValues(alpha: 0.65),
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          GestureDetector(
-            onTap: () {},
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppColors.amber,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Text(
-                'Go to Library →',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.white,
-                ),
+
+          const SizedBox(height: 4),
+
+          // Book title + today's reading progress
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, color: AppColors.muted),
+          ),
+          if (_pagesReadToday > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(
+                '$_pagesReadToday of $liveGoal pages read today',
+                style: const TextStyle(fontSize: 11, color: AppColors.amberLight),
               ),
             ),
+
+          const SizedBox(height: 14),
+
+          // Progress bar
+          ClipRRect(
+            borderRadius: BorderRadius.circular(2),
+            child: LinearProgressIndicator(
+              value: pct,
+              minHeight: 4,
+              backgroundColor: AppColors.cream.withValues(alpha: 0.1),
+              valueColor: const AlwaysStoppedAnimation(AppColors.amber),
+            ),
           ),
+
+          const SizedBox(height: 8),
+
+          // Meta row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${(pct * 100).round()}% complete',
+                style: const TextStyle(fontSize: 11, color: AppColors.muted),
+              ),
+              Text(
+                daysLeft == 0
+                    ? 'Due today!'
+                    : '$daysLeft days left',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.amberLight,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+
         ],
       ),
     );
@@ -431,8 +642,8 @@ class _PacerCard extends StatelessWidget {
 
 // ── CONTINUE READING ──────────────────────────────────────────────────────────
 class _ContinueReadingCard extends StatefulWidget {
-  final int refreshCount;
-  const _ContinueReadingCard({required this.refreshCount});
+  final VoidCallback? onReaderClosed;
+  const _ContinueReadingCard({this.onReaderClosed});
 
   @override
   State<_ContinueReadingCard> createState() => _ContinueReadingCardState();
@@ -449,16 +660,27 @@ class _ContinueReadingCardState extends State<_ContinueReadingCard> {
     _load();
   }
 
-  @override
-  void didUpdateWidget(_ContinueReadingCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.refreshCount != widget.refreshCount) _load();
-  }
-
   Future<void> _load() async {
     try {
       final userId = _supabase.auth.currentUser!.id;
-      final response = await _supabase
+      final prefs = await SharedPreferences.getInstance();
+      final lastEntryId = prefs.getString('last_read_entry');
+
+      Map<String, dynamic>? response;
+
+      // Prefer the book the user most recently opened in the reader
+      if (lastEntryId != null) {
+        response = await _supabase
+            .from('user_library')
+            .select('*, books(*)')
+            .eq('user_id', userId)
+            .eq('id', lastEntryId)
+            .eq('status', 'reading')
+            .maybeSingle();
+      }
+
+      // Fall back to most recently added reading book
+      response ??= await _supabase
           .from('user_library')
           .select('*, books(*)')
           .eq('user_id', userId)
@@ -466,6 +688,12 @@ class _ContinueReadingCardState extends State<_ContinueReadingCard> {
           .order('started_at', ascending: false)
           .limit(1)
           .maybeSingle();
+
+      // TODO: Pin feature — let users pin any book to always appear here,
+      // regardless of reading recency. A pin icon in the book card's options
+      // menu would store `pinned: true` in user_library; query for it first
+      // before falling back to last-read or started_at ordering.
+
       if (mounted) setState(() { _entry = response; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -648,7 +876,7 @@ class _ContinueReadingCardState extends State<_ContinueReadingCard> {
                 initialPage: progress,
                 totalPages: totalPages,
               )),
-            ).then((_) => _load()), // reload card when reader closes
+            ).then((_) { _load(); widget.onReaderClosed?.call(); }),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
@@ -673,8 +901,7 @@ class _ContinueReadingCardState extends State<_ContinueReadingCard> {
 
 // ── UP NEXT SHELF ─────────────────────────────────────────────────────────────
 class _UpNextShelf extends StatefulWidget {
-  final int refreshCount;
-  const _UpNextShelf({required this.refreshCount});
+  const _UpNextShelf();
 
   @override
   State<_UpNextShelf> createState() => _UpNextShelfState();
@@ -689,12 +916,6 @@ class _UpNextShelfState extends State<_UpNextShelf> {
   void initState() {
     super.initState();
     _load();
-  }
-
-  @override
-  void didUpdateWidget(_UpNextShelf oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.refreshCount != widget.refreshCount) _load();
   }
 
   Future<void> _load() async {
@@ -985,7 +1206,12 @@ class _ProfileMenuSheet extends StatelessWidget {
           _menuItem(context, Icons.workspace_premium_outlined,
               'Upgrade to Premium', AppColors.amberLight, () {}),
           _menuItem(context, Icons.bar_chart_rounded,
-              'Reading stats', AppColors.cream, () {}),
+              'Reading stats', AppColors.cream, () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const DashboardScreen()),
+                );
+              }),
           _menuItem(context, Icons.settings_outlined,
               'Settings', AppColors.cream, () {}),
           _menuItem(context, Icons.help_outline_rounded,
